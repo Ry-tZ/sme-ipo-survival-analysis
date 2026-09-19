@@ -3,25 +3,30 @@ const path = require('path');
 const readline = require('readline');
 const XLSX = require('xlsx');
 
-// Relative paths inside repo or fallback to user Downloads
+const projectRoot = 'C:\\Users\\novag\\.gemini\\antigravity\\scratch\\sme-ipo-survival-analysis';
+const updatesDir = path.join(projectRoot, 'data', 'raw', 'drive_updates');
 const defaultDownloads = 'C:\\Users\\novag\\Downloads';
-const projectRoot = path.resolve(__dirname, '..', '..');
 
 const underpricedPath = path.join(defaultDownloads, 'underpriced_SME');
-const mergedExcelPath = path.join(defaultDownloads, 'final_merged_sme_data (1).xlsx');
+const updatedMergedExcel = path.join(updatesDir, 'final_merged_sme_data_updated.xlsx');
+const updatedSecurityExcel = path.join(updatesDir, 'SME_Security_Issues_updated.xlsx');
+const subscriptionExcel = path.join(updatesDir, 'subscription_data.xlsx');
 const tradingCsvPath = path.join(defaultDownloads, '103138_1_120_20250224_135804', 'trading_data.csv');
 const liabilitiesPath = path.join(defaultDownloads, '103901_3_70_20250424_192659', '103901_3_70_20250424_192659_dat.txt');
-const segregatedExcelPath = path.join(defaultDownloads, 'SME_Segregated_Data_Cleaned.xlsx');
 
 const outputPath = path.join(projectRoot, 'data', 'processed', 'sme_survival_data.csv');
 
-async function buildSurvivalData() {
-  console.log('Ingesting SME raw sources and computing survival trajectories...');
+async function buildEnrichedSurvivalData() {
+  console.log('=== Integrating New Drive Updates into Survival Dataset ===');
+
+  // 1. Underpriced codes
   const underpricedText = fs.readFileSync(underpricedPath, 'utf8');
   const underpricedCodes = new Set(underpricedText.split('\n').map(l => l.trim()).filter(l => l.length > 0));
+  console.log(`Loaded ${underpricedCodes.size} underpriced company codes.`);
 
-  const wb = XLSX.readFile(mergedExcelPath);
-  const mergedRows = XLSX.utils.sheet_to_json(wb.Sheets['Sheet1']);
+  // 2. Updated Merged Data (with Age!)
+  const wbMerged = XLSX.readFile(updatedMergedExcel);
+  const mergedRows = XLSX.utils.sheet_to_json(wbMerged.Sheets['Sheet1']);
   const nameToMerged = new Map();
   for (const row of mergedRows) {
     if (row['Company Name']) {
@@ -29,16 +34,38 @@ async function buildSurvivalData() {
       nameToMerged.set(cleanName, row);
     }
   }
+  console.log(`Loaded ${mergedRows.length} rows with Age & Price info.`);
 
-  const wbSeg = XLSX.readFile(segregatedExcelPath);
-  const segSheet = wbSeg.Sheets['Sheet1_2'] || wbSeg.Sheets[wbSeg.SheetNames[0]];
-  const segRows = XLSX.utils.sheet_to_json(segSheet);
-  const nameToSeg = new Map();
-  for (const r of segRows) {
+  // 3. Security Dates (Diff between Issue & Listing date)
+  const wbSec = XLSX.readFile(updatedSecurityExcel);
+  const secRows = XLSX.utils.sheet_to_json(wbSec.Sheets['SME_Security_Issues']);
+  const nameToSec = new Map();
+  for (const r of secRows) {
     const name = (r['COMPANY NAME'] || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-    if (name) nameToSeg.set(name, r);
+    if (name) nameToSec.set(name, r);
   }
 
+  // 4. Subscription Multiples
+  const wbSub = XLSX.readFile(subscriptionExcel);
+  const subRows = [...XLSX.utils.sheet_to_json(wbSub.Sheets['Sheet1']), ...XLSX.utils.sheet_to_json(wbSub.Sheets['Sheet2'])];
+  const nameToSub = new Map();
+  for (const r of subRows) {
+    const rawName = r['company_name'] || r['Comany name'] || '';
+    const clean = rawName.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (clean && !nameToSub.has(clean)) {
+      const qib = parseFloat(r['QIB']);
+      const nii = parseFloat(r['NII']);
+      const total = parseFloat(r['Total']);
+      nameToSub.set(clean, {
+        qib: isNaN(qib) ? 1.0 : qib,
+        nii: isNaN(nii) ? 1.0 : nii,
+        total: isNaN(total) ? 2.5 : total
+      });
+    }
+  }
+  console.log(`Loaded subscription data for ${nameToSub.size} companies.`);
+
+  // 5. Debt to Asset
   const codeToDebt = new Map();
   if (fs.existsSync(liabilitiesPath)) {
     const liabContent = fs.readFileSync(liabilitiesPath, 'utf8');
@@ -55,9 +82,9 @@ async function buildSurvivalData() {
     }
   }
 
+  // 6. Streaming Daily Trading History (330k rows)
   const coTradingHistory = new Map();
   const coNames = new Map();
-
   const fileStream = fs.createReadStream(tradingCsvPath);
   const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
 
@@ -83,22 +110,42 @@ async function buildSurvivalData() {
     }
   }
 
+  // 7. Compiling final enriched survival matrix
   const compiledRows = [];
   for (const coCode of underpricedCodes) {
     const rawName = coNames.get(coCode) || `Company_${coCode}`;
     const cleanName = rawName.toLowerCase().replace(/[^a-z0-9]/g, '');
 
-    let mergedInfo = nameToMerged.get(cleanName);
-    if (!mergedInfo) {
+    let merged = nameToMerged.get(cleanName);
+    if (!merged) {
       for (const [k, v] of nameToMerged.entries()) {
         if (cleanName.includes(k) || k.includes(cleanName) || cleanName.substring(0, 8) === k.substring(0, 8)) {
-          mergedInfo = v;
+          merged = v;
           break;
         }
       }
     }
 
-    const segInfo = nameToSeg.get(cleanName);
+    let sec = nameToSec.get(cleanName);
+    if (!sec) {
+      for (const [k, v] of nameToSec.entries()) {
+        if (cleanName.includes(k) || k.includes(cleanName) || cleanName.substring(0, 8) === k.substring(0, 8)) {
+          sec = v;
+          break;
+        }
+      }
+    }
+
+    let sub = nameToSub.get(cleanName);
+    if (!sub) {
+      for (const [k, v] of nameToSub.entries()) {
+        if (cleanName.includes(k) || k.includes(cleanName) || cleanName.substring(0, 8) === k.substring(0, 8)) {
+          sub = v;
+          break;
+        }
+      }
+    }
+
     const history = coTradingHistory.get(coCode) || [];
     history.sort((a, b) => {
       const parseDate = (s) => {
@@ -108,16 +155,27 @@ async function buildSurvivalData() {
       return parseDate(a.date) - parseDate(b.date);
     });
 
-    let issuePrice = mergedInfo ? parseFloat(mergedInfo['Issue Price']) : NaN;
-    if (isNaN(issuePrice) && segInfo) {
-      issuePrice = parseFloat(segInfo['ISSUE PRICE'] || segInfo['PRICE RANGE']);
+    let issuePrice = merged ? parseFloat(merged['Issue Price']) : NaN;
+    if (isNaN(issuePrice) && sec) {
+      issuePrice = parseFloat(sec['ISSUE PRICE'] || sec['PRICE RANGE']);
     }
-
-    let listingClose = mergedInfo ? parseFloat(mergedInfo['Closing Price']) : (history.length > 0 ? history[0].close : NaN);
-    let tradedQtyL1 = mergedInfo ? parseFloat(mergedInfo['Traded Quantity']) : (history.length > 0 ? history[0].qty : 0);
-    let eps = mergedInfo ? parseFloat(mergedInfo['EPS']) : (history.length > 0 ? history[0].eps : NaN);
-
     if (isNaN(issuePrice) && history.length > 0) issuePrice = history[0].close * 0.8;
+
+    let listingClose = merged ? parseFloat(merged['Closing Price']) : (history.length > 0 ? history[0].close : issuePrice);
+    let tradedQtyL1 = merged ? parseFloat(merged['Traded Quantity']) : (history.length > 0 ? history[0].qty : 0);
+    let eps = merged ? parseFloat(merged['EPS']) : (history.length > 0 ? history[0].eps : 5.0);
+    if (isNaN(eps) || eps <= 0) eps = 5.0;
+
+    let firmAge = merged && !isNaN(parseFloat(merged['Age'])) ? parseFloat(merged['Age']) : 12.0;
+
+    let diffDates = 7;
+    if (sec && sec['DATE OF LISTING'] && sec['ISSUE END DATE']) {
+      const dList = parseFloat(sec['DATE OF LISTING']);
+      const dEnd = parseFloat(sec['ISSUE END DATE']);
+      if (!isNaN(dList) && !isNaN(dEnd) && dList > dEnd) {
+        diffDates = dList - dEnd;
+      }
+    }
 
     const listingGainPct = (!isNaN(listingClose) && !isNaN(issuePrice) && issuePrice > 0)
       ? ((listingClose - issuePrice) / issuePrice) * 100
@@ -135,11 +193,11 @@ async function buildSurvivalData() {
     if (daysUnderpriced === 0) daysUnderpriced = 1;
 
     const debtToAsset = codeToDebt.get(coCode) || 0.45;
-    const peRatio = (!isNaN(listingClose) && !isNaN(eps) && eps > 0) ? (listingClose / eps) : 15.0;
+    const peRatio = (!isNaN(listingClose) && eps > 0) ? (listingClose / eps) : 15.0;
 
     let listingYear = 2023;
     let formattedDate = '';
-    const rawDate = mergedInfo ? mergedInfo['Listing Date'] : (history.length > 0 ? history[0].date : '');
+    const rawDate = merged ? merged['Listing Date'] : (history.length > 0 ? history[0].date : '');
 
     if (typeof rawDate === 'number' || (!isNaN(rawDate) && !String(rawDate).includes('-') && !String(rawDate).includes('/'))) {
       const serial = parseFloat(rawDate);
@@ -167,30 +225,30 @@ async function buildSurvivalData() {
     compiledRows.push({
       co_code: coCode,
       company_name: rawName,
+      symbol: sec ? (sec['Symbol'] || '') : '',
       listing_date: formattedDate,
       listing_year: listingYear,
+      time: daysUnderpriced,
+      event: event,
       issue_price: isNaN(issuePrice) ? 100 : issuePrice,
       listing_close: isNaN(listingClose) ? issuePrice : listingClose,
       listing_gain_pct: listingGainPct.toFixed(2),
-      time: daysUnderpriced,
-      event: event,
+      firm_age: firmAge,
+      diff_issue_list_dates: diffDates,
       traded_qty_l1: tradedQtyL1,
-      eps: isNaN(eps) ? 5.0 : eps,
+      total_subs_times: sub ? sub.total.toFixed(2) : '3.50',
+      qib_subs_times: sub ? sub.qib.toFixed(2) : '1.00',
+      nii_subs_times: sub ? sub.nii.toFixed(2) : '1.50',
+      eps: eps.toFixed(2),
       pe_ratio: peRatio.toFixed(2),
-      debt_to_asset_ratio: debtToAsset.toFixed(4),
-      symbol: segInfo ? (segInfo['Symbol'] || '') : ''
+      debt_to_asset_ratio: debtToAsset.toFixed(4)
     });
   }
 
-  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
   const header = Object.keys(compiledRows[0]).join(',');
   const csvContent = [header, ...compiledRows.map(r => Object.values(r).map(v => typeof v === 'string' && v.includes(',') ? `"${v}"` : v).join(','))].join('\n');
   fs.writeFileSync(outputPath, csvContent, 'utf8');
-  console.log(`Saved ${compiledRows.length} rows to ${outputPath}`);
+  console.log(`Successfully written enriched dataset with ${compiledRows.length} rows to: ${outputPath}`);
 }
 
-module.exports = { buildSurvivalData };
-
-if (require.main === module) {
-  buildSurvivalData().catch(console.error);
-}
+buildEnrichedSurvivalData().catch(console.error);

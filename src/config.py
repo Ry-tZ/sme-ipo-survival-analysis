@@ -11,21 +11,22 @@ TABLES_DIR = OUTPUTS_DIR / "tables"
 
 # File Paths
 PROCESSED_SURVIVAL_CSV = PROCESSED_DATA_DIR / "sme_survival_data.csv"
-PROCESSED_SURVIVAL_PARQUET = PROCESSED_DATA_DIR / "sme_survival_data.parquet"
 
 # Survival Definitions
-EVENT_THRESHOLD_COL = "Close_Price"
-EVENT_BENCHMARK_COL = "Issue_Price"  # Event occurs when Close <= Issue_Price
-TIME_HORIZON_MAX_DAYS = 2500         # Study window limit (2013-2024)
+EVENT_THRESHOLD_COL = "listing_close"
+EVENT_BENCHMARK_COL = "issue_price"  # Event occurs when Close <= Issue_Price
 
-# Default Model Features
-CORE_FEATURES = [
-    "Firm_Age",
-    "Offer_Size_Cr",
-    "Total_Subs_Times",
-    "Traded_Qty_L1",
-    "Listing_Gain_Pct",
-    "EPS",
-    "PE_Ratio",
-    "Debt_to_Asset_Ratio"
+# Enriched Covariates Matrix
+ALL_COVARIATES = [
+    "listing_gain_pct",
+    "firm_age",
+    "diff_issue_list_dates",
+    "log_traded_qty",
+    "total_subs_times",
+    "qib_subs_times",
+    "nii_subs_times",
+    "eps",
+    "pe_ratio_clipped",
+    "debt_to_asset_ratio",
+    "is_hot_period"
 ]

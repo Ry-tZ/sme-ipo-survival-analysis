@@ -11,6 +11,13 @@ function testDataIntegrity() {
   const header = lines[0].split(',');
   console.log(`[PASS] Headers present (${header.length} columns): ${header.join(', ')}`);
   
+  const timeIdx = header.indexOf('time');
+  const eventIdx = header.indexOf('event');
+  
+  if (timeIdx === -1 || eventIdx === -1) {
+    throw new Error('Missing time or event column');
+  }
+  
   const rows = lines.slice(1);
   if (rows.length !== 436) {
     throw new Error(`Expected 436 rows, found ${rows.length}`);
@@ -24,9 +31,8 @@ function testDataIntegrity() {
   
   for (let i = 0; i < rows.length; i++) {
     const parts = rows[i].split(',');
-    // time is index 7, event is index 8
-    const time = parseFloat(parts[7]);
-    const event = parseInt(parts[8]);
+    const time = parseFloat(parts[timeIdx]);
+    const event = parseInt(parts[eventIdx]);
     
     if (!isNaN(time) && time >= 1) validTimes++;
     if (event === 0 || event === 1) {
