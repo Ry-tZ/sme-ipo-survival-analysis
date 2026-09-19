@@ -14,3 +14,6 @@ data/raw/*
 .ipynb_checkpoints/
 *.swp
 .DS_Store
+
+node_modules/
+package-lock.json
