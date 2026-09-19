@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+env/
+venv/
+.venv/
+
+# Data
+data/raw/*
+!data/raw/.gitkeep
+
+# Checkpoints & system
+.ipynb_checkpoints/
+*.swp
+.DS_Store

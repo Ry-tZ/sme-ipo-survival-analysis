@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sme-ipo-survival-analysis"
+version = "1.0.0"
+description = "Econometric and Machine Learning Survival Analysis of Underpricing in Indian SME IPOs"
+authors = [{ name = "Rajat Sambare", email = "rajatsambare230892003@gmail.com" }]
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "pandas>=2.0.0",
+    "numpy>=1.24.0",
+    "lifelines>=0.28.0",
+    "scikit-survival>=0.22.0",
+    "matplotlib>=3.7.0",
+    "seaborn>=0.12.0"
+]
