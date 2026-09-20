@@ -81,6 +81,20 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+COX_FEATURES = [
+    'time', 'event', 'listing_gain_pct', 'firm_age', 'diff_issue_list_dates',
+    'log_traded_qty', 'total_subs_times', 'log_retail_subs',
+    'log_day1_subs', 'log_subs_accel', 'log_closing_surge',
+    'eps', 'pe_ratio_clipped', 'debt_to_asset_ratio', 'is_hot_period'
+]
+
+RSF_FEATURES = [
+    'listing_gain_pct', 'firm_age', 'diff_issue_list_dates',
+    'log_traded_qty', 'total_subs_times', 'log_retail_subs',
+    'log_day1_subs', 'log_subs_accel', 'log_closing_surge',
+    'eps', 'pe_ratio_clipped', 'debt_to_asset_ratio', 'is_hot_period'
+]
+
 @st.cache_resource
 def train_and_cache_models():
     df = load_survival_data()
@@ -90,28 +104,17 @@ def train_and_cache_models():
     kmf.fit(df['time'], event_observed=df['event'])
     
     # 2. Penalized Cox PH
-    cox_features = [
-        'time', 'event', 'listing_gain_pct', 'firm_age', 'diff_issue_list_dates',
-        'log_traded_qty', 'total_subs_times', 'log_retail_subs',
-        'log_day1_subs', 'log_subs_accel', 'log_closing_surge',
-        'eps', 'pe_ratio_clipped', 'debt_to_asset_ratio', 'is_hot_period'
-    ]
     cph = CoxPHFitter(penalizer=0.1, l1_ratio=0.5)
-    cph.fit(df[cox_features].dropna(), duration_col='time', event_col='event')
+    cph.fit(df[COX_FEATURES].dropna(), duration_col='time', event_col='event')
     
     # 3. Random Survival Forest
-    rsf_features = [
-        'listing_gain_pct', 'firm_age', 'diff_issue_list_dates',
-        'log_traded_qty', 'total_subs_times', 'log_retail_subs',
-        'log_day1_subs', 'log_subs_accel', 'log_closing_surge',
-        'eps', 'pe_ratio_clipped', 'debt_to_asset_ratio', 'is_hot_period'
-    ]
-    X = df[rsf_features].fillna(0)
+    X = df[RSF_FEATURES].fillna(0)
     y = Surv.from_dataframe('event', 'time', df)
     rsf = RandomSurvivalForest(n_estimators=80, min_samples_split=10, min_samples_leaf=5, random_state=42, n_jobs=-1)
     rsf.fit(X, y)
     
     return df, kmf, cph, rsf
+
 
 with st.spinner("Initializing Quantitative Econometric Engine & Training Survival Models..."):
     df_raw, kmf, cph, rsf = train_and_cache_models()
@@ -462,8 +465,9 @@ with tab4:
         test_features['debt_to_asset_ratio'] = 0.35
         test_features['is_hot_period'] = 1
         
-        df_test18['Predicted Risk Score'] = rsf.predict(test_features[rsf_features])
+        df_test18['Predicted Risk Score'] = rsf.predict(test_features[RSF_FEATURES])
         df_test18['Model Risk Tier'] = pd.qcut(df_test18['Predicted Risk Score'], 3, labels=['Low Risk', 'Medium Risk', 'High Risk'])
+
         
         df_display_oot = df_test18[['company_name', 'listing_date', 'listing_gain_pct', 'current_gain_loss_pct', 'event', 'Model Risk Tier', 'Predicted Risk Score']].sort_values('Predicted Risk Score').rename(columns={
             'company_name': 'Company Name',
