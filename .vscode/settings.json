@@ -1,0 +1,11 @@
+{
+  "python.defaultInterpreterPath": "C:\\ProgramData\\anaconda3\\python.exe",
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}"
+  ],
+  "jupyter.jupyterServerType": "local",
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/.pytest_cache": true
+  }
+}
