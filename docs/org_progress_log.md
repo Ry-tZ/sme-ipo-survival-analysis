@@ -189,9 +189,42 @@ C:\ProgramData\anaconda3\python.exe -m streamlit run dashboard/app.py
 
 ---
 
-## 4. Next Phase: Developing the Real-Time Recommendation Engine
+---
 
-With the empirical modeling and simulation infrastructure complete, the QR division's next strategic phase focuses on **Production Recommendation & Capital Allocation**:
-1. **Pre-Listing Bidding Recommendation:** Classifying active DRHPs based on Day-1 and Day-2 bidding acceleration to recommend whether to bid.
-2. **Day-1 Listing Action Recommendation:** An automated signal on listing morning recommending whether to liquidate at open, hold to Day 20, or extend to Day 120.
-3. **Competing Risk Formalization:** Cause-specific hazard modeling for Mainboard Migration vs. downside breach.
+### 🚀 Pillar 7: Production Recommendation Engine & Quantitative Capital Sizing
+
+#### Phase 7.1: Institutional Lot Sizing & Allotment Probability Engine
+- **Module:** [`src/models/recommendation_engine.py`](../src/models/recommendation_engine.py)
+- **SEBI SME Lot Sizing:** Implemented statutory price-band lot size slabs (CIR/MRD/DSA/06/2012) ranging from 10,000 shares down to 100 shares, keeping minimum ticket sizes standardized at ~INR 1.0L–1.45L.
+- **Computerized Lottery Modeling (Retail Category):**
+  $$\mathbb{P}(\text{Allotment})_{\text{Retail}} \approx \min\left(1.0, \frac{1}{\text{Retail Subscription Multiplier}}\right)$$
+- **Multi-PAN Binomial Scaling:** Evaluates the cumulative odds of securing at least one lot across $k$ family member PANs:
+  $$\mathbb{P}(\ge 1 \text{ Allotment}) = 1 - (1 - p_{\text{retail}})^k$$
+  $$\mathbb{E}[\text{Allotted Lots}] = k \cdot p_{\text{retail}}$$
+
+#### Phase 7.2: Kelly-Adjusted Capital Allocation & ASBA Opportunity Cost
+- **Dynamic Risk Sizing:**
+  - **Q1 (Highest Conviction / Safest):** Maximize retail allocation across up to $k$ PANs; hold for long-term compounder horizon ($T+60$ to $T+120$).
+  - **Q2 (Low Hazard / Stable):** Allocate 2–3 PANs; harvest 50% at Day-1 pop and trail remainder.
+  - **Q3 (Moderate / Speculative):** Allocate strictly 1 PAN for Day-1 listing pop flip.
+  - **Q4 (High Hazard):** Speculative flip only (liquidate at pre-open session $T+1$).
+  - **Q5 (Extreme Hazard / Value Trap):** Zero allocation (`AVOID`).
+- **Opportunity Cost Engine:** Explicitly accounts for 4-day ASBA funds block at RBI risk-free repo rate (6.5% p.a.).
+
+#### Phase 7.3: Interactive Recommendation Tab in Simulation Lab
+- Added **Tab 1: 🎯 Production Recommendation Engine** to [`dashboard/app.py`](../dashboard/app.py).
+- Features live investor budget configuration, family PAN scaling sliders, real-time allotment probability gauge, interactive Plotly binomial distribution chart, and pre-bidding/listing execution playbooks.
+- **Automated Verification:** 100% test pass across unit tests in [`tests/test_recommendation_engine.py`](../tests/test_recommendation_engine.py).
+
+---
+
+## 4. How to Launch the Production Recommendation & Simulation Lab
+
+To run the interactive simulator and recommendation engine on your local machine:
+```bash
+# In the project directory:
+C:\ProgramData\anaconda3\python.exe -m streamlit run dashboard/app.py
+```
+Or simply double-click:
+- `run_dashboard.bat` or `run_dashboard.ps1`
+

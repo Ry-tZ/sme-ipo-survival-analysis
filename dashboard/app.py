@@ -25,6 +25,13 @@ from src.data.loader import load_survival_data
 from lifelines import CoxPHFitter, KaplanMeierFitter
 from sksurv.ensemble import RandomSurvivalForest
 from sksurv.util import Surv
+from src.models.recommendation_engine import (
+    get_sebi_lot_size,
+    get_minimum_investment,
+    calculate_allotment_probabilities,
+    calculate_capital_allocation,
+    SMERecommendationEngine
+)
 
 st.set_page_config(
     page_title="SME IPO Survival Simulator",
@@ -267,13 +274,259 @@ with col5:
 st.markdown("---")
 
 # DASHBOARD TABS
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab_rec, tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "🎯 Production Recommendation Engine",
     "📈 Survival Probability Trajectory S(t)",
     "⚙️ Microstructure & Slippage Engine",
     "👯 Historical Twin Matcher",
     "🔬 Econometric Weights & Diagnostics",
     "📊 Live Company Performance (Till Today)"
 ])
+
+# -------------------------------------------------------------
+# TAB: PRODUCTION RECOMMENDATION & ALLOTMENT ENGINE
+# -------------------------------------------------------------
+with tab_rec:
+    st.subheader("🎯 Institutional Recommendation, Allotment Probability & Capital Allocation Engine")
+    st.markdown("""
+    Actionable pre-bidding decision support system combining **SEBI SME statutory lot sizing**, 
+    **computerized lottery allotment odds (RII/NII)**, **ASBA opportunity cost**, and **survival hazard scoring**.
+    """)
+    
+    # Portfolio Capital & Investor Settings
+    st.markdown("### 💼 Investor Profile & Capital Constraints")
+    c_cap1, c_cap2, c_cap3 = st.columns(3)
+    with c_cap1:
+        user_capital = st.number_input("Total Liquid SME IPO Capital Budget (INR)", min_value=50000.0, max_value=10000000.0, value=500000.0, step=25000.0, format="%.0f")
+    with c_cap2:
+        user_pans = st.slider("Available Distinct Family PAN Accounts", min_value=1, max_value=10, value=3, step=1, help="Under SEBI lottery rules, applying 1 lot across multiple PANs is the only mechanism to increase retail allotment odds.")
+    with c_cap3:
+        risk_profile_pref = st.selectbox("Investor Mandate", ["Balanced Capital Compounder", "Aggressive Multi-bagger Hunter", "Listing Day Pop Scalper"])
+
+    st.markdown("### 🏢 SME IPO Target Selection")
+    # Load out-of-time post-2024 dataset for real examples
+    oot_path = PROJECT_ROOT / "data" / "processed" / "sme_out_of_time_post2024_evaluation.csv"
+    has_oot = oot_path.exists()
+    
+    ipo_options = ["Custom Active Bidding IPO"]
+    oot_df = None
+    if has_oot:
+        oot_df = pd.read_csv(oot_path)
+        sample_names = oot_df['company_name'].dropna().unique().tolist()[:30]
+        ipo_options = ["Custom Active Bidding IPO"] + sample_names
+        
+    selected_target = st.selectbox("Select Target IPO or Model Custom Case", ipo_options)
+    
+    if selected_target != "Custom Active Bidding IPO" and oot_df is not None:
+        target_row = oot_df[oot_df['company_name'] == selected_target].iloc[0]
+        rec_issue_price = float(target_row['issue_price'])
+        rec_lot_size = get_sebi_lot_size(rec_issue_price)
+        rec_retail_subs = float(target_row['retail_subs_times']) if 'retail_subs_times' in target_row and not pd.isna(target_row['retail_subs_times']) else float(target_row.get('total_subs_times', 40.0) * 0.8)
+        rec_total_subs = float(target_row['total_subs_times'])
+        rec_pe = float(target_row['pe_ratio_clipped'])
+        rec_age = float(target_row['firm_age'])
+        rec_pop = float(target_row['listing_gain_pct'])
+        rec_name = selected_target
+        st.info(f"Loaded out-of-time benchmark parameters for **{selected_target}**: Issue Price INR {rec_issue_price:.2f} | Retail Subs: {rec_retail_subs:.1f}x | Total Subs: {rec_total_subs:.1f}x")
+    else:
+        rec_name = st.text_input("Company Name", "Apex High-Tech Precision Engineering Ltd.")
+        r_c1, r_c2, r_c3, r_c4 = st.columns(4)
+        with r_c1:
+            rec_issue_price = st.number_input("Issue Price (INR)", min_value=10.0, max_value=1000.0, value=float(issue_price), step=5.0, key="rec_ip")
+        with r_c2:
+            default_sebi_lot = get_sebi_lot_size(rec_issue_price)
+            rec_lot_size = st.number_input("Lot Size (Shares)", min_value=100, max_value=10000, value=int(default_sebi_lot), step=100, key="rec_ls")
+        with r_c3:
+            rec_retail_subs = st.number_input("Retail Subscription (x)", min_value=0.1, max_value=1500.0, value=float(retail_subs_times), step=5.0, key="rec_rs")
+        with r_c4:
+            rec_total_subs = st.number_input("Total Subscription (x)", min_value=0.1, max_value=2000.0, value=float(total_subs_times), step=10.0, key="rec_ts")
+        rec_pe = float(pe_ratio)
+        rec_age = float(firm_age)
+        rec_pop = float(listing_gain_pct)
+
+    # Initialize Engine with trained RSF & Cox
+    engine = SMERecommendationEngine(rsf_model=rsf, cph_model=cph)
+    
+    # Feature dictionary for ML scoring
+    rec_features = {
+        'listing_gain_pct': rec_pop,
+        'firm_age': rec_age,
+        'diff_issue_list_dates': float(diff_issue_list_dates),
+        'log_traded_qty': np.log1p(rec_lot_size * 400),
+        'total_subs_times': rec_total_subs,
+        'log_retail_subs': np.log1p(rec_retail_subs),
+        'log_day1_subs': np.log1p(day1_subs),
+        'log_subs_accel': np.log1p(subs_accel),
+        'log_closing_surge': np.log1p(closing_day_surge),
+        'eps': 8.5,
+        'pe_ratio_clipped': min(100.0, rec_pe),
+        'debt_to_asset_ratio': 0.35,
+        'is_hot_period': 1.0
+    }
+    
+    rec_result = engine.generate_recommendation(
+        company_name=rec_name,
+        issue_price=rec_issue_price,
+        retail_subs_times=rec_retail_subs,
+        total_subs_times=rec_total_subs,
+        available_capital_inr=user_capital,
+        lot_size=rec_lot_size,
+        family_pans=user_pans,
+        features_dict=rec_features
+    )
+    
+    alloc = rec_result['allocation_info']
+    allot = rec_result['allotment_info']
+    risk = rec_result['risk_profile']
+    min_inv = rec_result['min_amount_inr']
+    
+    # Visual Highlights
+    st.markdown("---")
+    
+    # ACTION BANNER
+    action_text = alloc.get('recommended_action', 'EVALUATING')
+    if "STRONG SUBSCRIBE" in action_text:
+        badge_style = "background-color:#1b5e20; border-left:6px solid #00e676; padding:16px; border-radius:8px;"
+        action_icon = "🟢"
+    elif "SUBSCRIBE" in action_text:
+        badge_style = "background-color:#1a3a5a; border-left:6px solid #00b0ff; padding:16px; border-radius:8px;"
+        action_icon = "🔵"
+    elif "SPECULATIVE" in action_text:
+        badge_style = "background-color:#e65100; border-left:6px solid #ff9100; padding:16px; border-radius:8px;"
+        action_icon = "🟠"
+    else:
+        badge_style = "background-color:#b71c1c; border-left:6px solid #ff1744; padding:16px; border-radius:8px;"
+        action_icon = "🔴"
+
+    st.markdown(f"""
+    <div style="{badge_style}">
+        <h3 style="margin:0; color:#ffffff;">{action_icon} RECOMMENDATION: {action_text}</h3>
+        <p style="margin:5px 0 0 0; color:#e0e0e0; font-size:15px;">
+            <b>Assigned Hazard Tier:</b> {risk['risk_quintile']} &nbsp;|&nbsp; 
+            <b>RSF Risk Score:</b> {risk['risk_score']:.2f} &nbsp;|&nbsp;
+            <b>Conviction Score:</b> {alloc.get('conviction_score', 50)}/100
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.write("")
+    
+    # 4 STAT CARDS
+    sc1, sc2, sc3, sc4 = st.columns(4)
+    with sc1:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-title">Mandatory Lot Size</div>
+            <div class="metric-val">{rec_lot_size:,} <span style="font-size:14px;color:#aaa;">Shares</span></div>
+            <div style="font-size:12px;color:#81c784;margin-top:4px;">SEBI Price-Band Compliant</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with sc2:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-title">Min Application Amount</div>
+            <div class="metric-val">INR {min_inv:,.0f}</div>
+            <div style="font-size:12px;color:#90caf9;margin-top:4px;">1 Lot @ INR {rec_issue_price:.2f}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with sc3:
+        p_single = allot['p_retail_single_pct']
+        ratio_str = allot['p_retail_ratio']
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-title">Retail Allotment Odds (1 PAN)</div>
+            <div class="metric-val">{p_single:.2f}%</div>
+            <div style="font-size:12px;color:#ffb74d;margin-top:4px;">{ratio_str}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with sc4:
+        p_combined = alloc.get('prob_at_least_one_allotment_pct', p_single)
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-title">Combined Odds ({user_pans} PANs)</div>
+            <div class="metric-val">{p_combined:.2f}%</div>
+            <div style="font-size:12px;color:#69f0ae;margin-top:4px;">Binomial Scaled Chance</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # CAPITAL ALLOCATION & ALLOTMENT CURVE
+    st.markdown("### 📊 Capital Sizing Breakdown & Multi-PAN Allotment Curve")
+    col_alloc_left, col_alloc_right = st.columns([1, 1])
+    
+    with col_alloc_left:
+        st.markdown("#### 💳 Capital Sizing & ASBA Costs")
+        if alloc['status'] == 'INSUFFICIENT_CAPITAL':
+            st.error(alloc['message'])
+        else:
+            rec_lots = alloc['recommended_lots']
+            rec_cap = alloc['recommended_capital_inr']
+            spare_cap = alloc['spare_capital_inr']
+            asba_cost = alloc['total_asba_opportunity_cost_inr']
+            
+            summary_table = pd.DataFrame([
+                {"Parameter": "Total Available Liquid Budget", "Value": f"INR {user_capital:,.0f}"},
+                {"Parameter": "Recommended Bidding Lots", "Value": f"{rec_lots} Lot{'s' if rec_lots != 1 else ''} ({alloc['category']})"},
+                {"Parameter": "Recommended Capital Blocked", "Value": f"INR {rec_cap:,.0f}"},
+                {"Parameter": "Spare Liquid Reserve", "Value": f"INR {spare_cap:,.0f}"},
+                {"Parameter": "Estimated ASBA Opportunity Cost (4 Days @ 6.5%)", "Value": f"INR {asba_cost:,.2f}"},
+                {"Parameter": "Expected Allotted Lots", "Value": f"{alloc['expected_allotted_lots']:.3f} Lots"},
+                {"Parameter": "Recommended Holding Horizon", "Value": f"{alloc['holding_horizon']}"}
+            ])
+            st.dataframe(summary_table, use_container_width=True, hide_index=True)
+            
+            st.info(f"**Execution Order Protocol:** {alloc['exit_execution_rule']}")
+
+    with col_alloc_right:
+        st.markdown("#### 🎲 Multi-PAN Allotment Scaling Curve")
+        pan_table_df = pd.DataFrame(allot['multi_pan_table'])
+        
+        fig_pan = go.Figure()
+        fig_pan.add_trace(go.Bar(
+            x=pan_table_df['num_pans'],
+            y=pan_table_df['prob_at_least_one_pct'],
+            text=[f"{v:.1f}%" for v in pan_table_df['prob_at_least_one_pct']],
+            textposition='auto',
+            name='P(>= 1 Lot)',
+            marker_color=['#00e676' if k == user_pans else '#0091ea' for k in pan_table_df['num_pans']]
+        ))
+        fig_pan.update_layout(
+            template="plotly_dark",
+            height=320,
+            margin=dict(l=30, r=30, t=20, b=30),
+            xaxis_title="Number of Unique Family PAN Applications (1 Lot Each)",
+            yaxis_title="Probability of Winning >= 1 Lot (%)",
+            yaxis_range=[0, min(100, max(pan_table_df['prob_at_least_one_pct']) * 1.2 + 5)]
+        )
+        st.plotly_chart(fig_pan, use_container_width=True)
+        st.caption(f"Green bar highlights your current setup of **{user_pans} Family PANs** under SEBI computerized lottery rules.")
+
+    # INSTITUTIONAL CHECKLIST & STRATEGY PLAYBOOK
+    st.markdown("### 📋 Institutional Pre-Bidding & Listing Playbook")
+    pl_c1, pl_c2, pl_c3 = st.columns(3)
+    
+    with pl_c1:
+        st.markdown("""
+        **1. Pre-Bidding Due Diligence**
+        - Verify anchor investor lock-in & quality (prefer reputed domestic mutual funds / AIFs).
+        - Check Day 2 bidding acceleration ($> 2.5\\times$ indicates institutional crowding).
+        - Ensure UPI ASBA mandate is approved before 5:00 PM on Issue Closing Day.
+        """)
+        
+    with pl_c2:
+        st.markdown("""
+        **2. Optimal Application Category**
+        - If Retail Subscription $> 20\\times$, **never apply for multiple lots under 1 PAN** (wastes blocked capital).
+        - Split capital into **1 lot per distinct family PAN** in Retail (up to INR 2 Lakhs).
+        - Only apply in sNII (> INR 2L to 10L) if total liquid capital $> 15$ Lakhs and NII quota is $< 30\\times$.
+        """)
+        
+    with pl_c3:
+        st.markdown(f"""
+        **3. Listing Day Execution Rule**
+        - **Target Strategy:** {alloc['holding_horizon']}
+        - **Execution Timing:** Pre-open session (9:45 AM – 10:00 AM IST on Listing Day).
+        - **Stop-loss Discipline:** Never hold a Q4/Q5 issue beyond Day 1 if traded volume dips below 150,000 shares.
+        """)
 
 
 # TAB 1: SURVIVAL SIMULATION CURVE
