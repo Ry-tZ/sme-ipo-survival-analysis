@@ -18,6 +18,10 @@ def load_survival_data(csv_path=PROCESSED_SURVIVAL_CSV):
     df['log_listing_gain'] = np.log1p(np.maximum(0, df['listing_gain_pct'].fillna(0)))
     df['is_hot_period'] = (df['listing_year'] >= 2023).astype(int)
     
+    # Bidding Dynamics & Acceleration
+    df['log_day1_subs'] = np.log1p(df['day1_subs'].fillna(0.53))
+    df['log_subs_accel'] = np.log1p(df['subs_acceleration'].fillna(6.67))
+    
     # Numerical stability
     df['pe_ratio_clipped'] = np.clip(df['pe_ratio'].fillna(15.0), -50, 200)
     df['debt_to_asset_ratio'] = df['debt_to_asset_ratio'].fillna(0.45)

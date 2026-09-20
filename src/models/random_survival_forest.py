@@ -19,6 +19,8 @@ def run_random_survival_forest(df, n_estimators=100, n_splits=5):
         'diff_issue_list_dates',
         'log_traded_qty',
         'total_subs_times',
+        'log_day1_subs',
+        'log_subs_accel',
         'eps',
         'pe_ratio_clipped',
         'debt_to_asset_ratio',

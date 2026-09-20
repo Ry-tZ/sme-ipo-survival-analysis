@@ -1,0 +1,9 @@
+Metric,Value
+Mean SEBI Mandated Lot Size (Shares),2106
+Median Ticket Size Per Lot (INR),"INR 126,000"
+Mean Listing Day Traded Lots,802.4
+Median Listing Day Traded Lots,524.0
+Gross First-Day Mean Return (%),54.11%
+Net Executable Mean Return (%),52.37%
+Estimated Mean Execution Slippage (%),1.73%
+Firms with Severe Illiquidity (<50 lots Day 1),42 (9.6%)

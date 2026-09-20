@@ -18,6 +18,8 @@ def run_cox_ph_regression(df, penalizer=0.1):
         'diff_issue_list_dates',
         'log_traded_qty',
         'total_subs_times',
+        'log_day1_subs',
+        'log_subs_accel',
         'eps',
         'pe_ratio_clipped',
         'debt_to_asset_ratio',
