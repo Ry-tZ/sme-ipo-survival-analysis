@@ -31,7 +31,11 @@ def load_survival_data(csv_path=PROCESSED_SURVIVAL_CSV):
     df['firm_age'] = df['firm_age'].fillna(12.0)
     df['diff_issue_list_dates'] = df['diff_issue_list_dates'].fillna(7.0)
     df['total_subs_times'] = df['total_subs_times'].fillna(3.5)
-    df['qib_subs_times'] = df['qib_subs_times'].fillna(1.0)
-    df['nii_subs_times'] = df['nii_subs_times'].fillna(1.5)
+    # Retail Demand & Application Breadth
+    df['retail_subs_times'] = df['retail_subs_times'].fillna(df['total_subs_times'])
+    df['log_retail_subs'] = np.log1p(df['retail_subs_times'])
+    df['retail_to_nii_ratio'] = df['retail_to_nii_ratio'].fillna(1.0)
+    df['qib_participated'] = df['qib_participated'].fillna(0).astype(int)
     
     return df
+

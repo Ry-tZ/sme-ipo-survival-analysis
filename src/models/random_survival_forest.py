@@ -19,6 +19,7 @@ def run_random_survival_forest(df, n_estimators=100, n_splits=5):
         'diff_issue_list_dates',
         'log_traded_qty',
         'total_subs_times',
+        'log_retail_subs',
         'log_day1_subs',
         'log_subs_accel',
         'log_closing_surge',
@@ -27,6 +28,7 @@ def run_random_survival_forest(df, n_estimators=100, n_splits=5):
         'debt_to_asset_ratio',
         'is_hot_period'
     ]
+
 
     
     X = df[feature_cols].copy().fillna(0)
