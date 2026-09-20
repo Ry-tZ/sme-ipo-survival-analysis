@@ -56,9 +56,19 @@ To mirror the operational rigor of elite quantitative hedge funds, the research 
     `https://webnodejs.chittorgarh.com/cloud/report/data-read/21/{page}/1/{year}/{financialYear}/0/sme/0`
   - Engineered [`src/data/harvest_chittorgarh_report21.py`](../src/data/harvest_chittorgarh_report21.py) with adaptive pacing (60ms) and retry logic.
   - Harvested **1,398 unique SME IPO records** from FY 2012–13 to FY 2025–26 with 0% data loss into [`data/raw/chittorgarh_subscription_all_sme.csv`](../data/raw/chittorgarh_subscription_all_sme.csv).
-  - Matched **433 out of 436 firms (99.3% match rate)** in the survival dataset via exchange symbols, BSE security codes, and fuzzy name matching.
+#### Phase 1.4: Ingestion of Live Secondary Prices & Returns Till Today
+- **Objective:** Track current live market prices, cumulative returns, and current survival status till today for all companies in the cohort.
+- **Actions Completed:**
+  - Engineered [`src/data/harvest_chittorgarh_report25.py`](../src/data/harvest_chittorgarh_report25.py) querying Chittorgarh Report 25 across all 14 financial years.
+  - Harvested **1,381 SME IPO records with live prices and current returns** into [`data/raw/chittorgarh_listing_history_all_sme.csv`](../data/raw/chittorgarh_listing_history_all_sme.csv).
+  - Executed [`src/data/update_current_prices.py`](../src/data/update_current_prices.py) matching 422 companies in our cohort:
+    - **230 companies (54.5%)** are currently trading **ABOVE** their issue price today (still surviving).
+    - **192 companies (45.5%)** are currently trading **BELOW** their issue price today (underpricing collapsed).
+    - **Median cohort return today:** **+19.1%**.
+  - Upgraded [`dashboard/app.py`](../dashboard/app.py) with **Tab 5 (Live SME IPO Market Performance & Status Till Today)** featuring instant ticker/name search and live pricing badges.
 
 ---
+
 
 ### 🔬 Pillar 2: Alpha Research Quant Pod (Hypothesis Formulation & Signal Discovery)
 

@@ -264,12 +264,14 @@ with col5:
 st.markdown("---")
 
 # DASHBOARD TABS
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📈 Survival Probability Trajectory S(t)",
     "⚙️ Microstructure & Slippage Engine",
     "👯 Historical Twin Matcher",
-    "🔬 Econometric Weights & Diagnostics"
+    "🔬 Econometric Weights & Diagnostics",
+    "📊 Live Company Performance (Till Today)"
 ])
+
 
 # TAB 1: SURVIVAL SIMULATION CURVE
 with tab1:
@@ -377,18 +379,25 @@ with tab3:
     twins = df_raw.loc[top_twin_indices].copy()
     
     for _, twin in twins.iterrows():
-        status_badge = '<span class="badge-danger">COLLAPSED</span>' if twin['event'] == 1 else '<span class="badge-pass">SURVIVED</span>'
+        curr_price_str = f"INR {twin['current_price_today']:.2f}" if pd.notna(twin.get('current_price_today')) else "N/A"
+        curr_gain_str = f"{twin['current_gain_pct_today']:+.1f}%" if pd.notna(twin.get('current_gain_pct_today')) else "N/A"
+        is_surv_now = twin.get('is_surviving_today', 0) == 1
+        live_badge = '<span class="badge-pass">ABOVE ISSUE PRICE TODAY</span>' if is_surv_now else '<span class="badge-danger">BELOW ISSUE PRICE TODAY</span>'
+        hist_badge = '<span class="badge-danger">BREACHED</span>' if twin['event'] == 1 else '<span class="badge-pass">SURVIVED</span>'
+
         st.markdown(f"""
         <div style="background:#263238; border-radius:6px; padding:12px; margin-bottom:12px; border-left:4px solid #00e5ff;">
             <div style="display:flex; justify-content:space-between; align-items:center;">
-                <h4 style="margin:0; color:#ffffff;">{twin['company_name']} ({twin['symbol']}) {status_badge}</h4>
+                <h4 style="margin:0; color:#ffffff;">{twin['company_name']} ({twin['symbol']}) &nbsp; {live_badge}</h4>
                 <span style="color:#aaa;">Listed: {twin['listing_date']}</span>
             </div>
             <div style="display:flex; gap:25px; margin-top:8px; font-size:14px; color:#cfd8dc;">
-                <div>Listing Gain: <b>+{twin['listing_gain_pct']:.1f}%</b></div>
+                <div>Issue Price: <b>INR {twin['issue_price']}</b></div>
+                <div>Listing Pop: <b>+{twin['listing_gain_pct']:.1f}%</b></div>
                 <div>Retail Subs: <b>{twin['retail_subs_times']:.1f}x</b></div>
-                <div>Day-1 Volume: <b>{twin['traded_qty_l1']:,}</b></div>
-                <div>Actual Survival: <b>{twin['time']} trading days</b></div>
+                <div>Current Price Today: <b>{curr_price_str}</b></div>
+                <div>Current Return Today: <b>{curr_gain_str}</b></div>
+                <div>Historical Survival: <b>{twin['time']} trading days</b> ({hist_badge})</div>
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -418,5 +427,72 @@ with tab4:
         })
         st.dataframe(rsf_df, use_container_width=True)
 
+# TAB 5: LIVE COHORT PERFORMANCE TILL TODAY
+with tab5:
+    st.subheader("📊 Live SME IPO Market Performance & Status Till Today")
+    st.markdown("""
+    Tracking the **real-time current market price and total return** across our **436 SME IPO cohort** 
+    sourced directly from live exchange feeds (NSE Emerge and BSE SME).
+    """)
+
+    # Top stats
+    total_tracked = len(df_raw)
+    surv_today = (df_raw['current_gain_pct_today'] > 0).sum()
+    collapsed_today = (df_raw['current_gain_pct_today'] <= 0).sum()
+    median_gain_today = df_raw['current_gain_pct_today'].median()
+
+    k1, k2, k3, k4 = st.columns(4)
+    with k1:
+        st.metric("Total Companies Tracked", f"{total_tracked}")
+    with k2:
+        st.metric("Above Issue Price Today", f"{surv_today} ({surv_today/total_tracked*100:.1f}%)", delta="Holding Gain")
+    with k3:
+        st.metric("Below Issue Price Today", f"{collapsed_today} ({collapsed_today/total_tracked*100:.1f}%)", delta="-Underpricing Collapsed", delta_color="inverse")
+    with k4:
+        st.metric("Cohort Median Return Today", f"{median_gain_today:+.1f}%")
+
+    st.markdown("### 🔍 Search & Lookup Any SME IPO")
+    search_query = st.text_input("Filter by Company Name or Symbol (e.g., 'Alpex', 'Drone', 'Steel', 'Tech')", "")
+
+    filtered_df = df_raw.copy()
+    if search_query:
+        q = search_query.strip().lower()
+        filtered_df = filtered_df[
+            filtered_df['company_name'].astype(str).str.lower().str.contains(q) |
+            filtered_df['symbol'].astype(str).str.lower().str.contains(q)
+        ]
+
+    cols_to_show = [
+        'company_name', 'symbol', 'listing_date', 'issue_price', 
+        'listing_close', 'listing_gain_pct', 'current_price_today', 
+        'current_gain_pct_today', 'is_surviving_today', 'time'
+    ]
+    display_table = filtered_df[cols_to_show].rename(columns={
+        'company_name': 'Company Name',
+        'symbol': 'Symbol',
+        'listing_date': 'Listing Date',
+        'issue_price': 'Issue Price (INR)',
+        'listing_close': 'Day-1 Close (INR)',
+        'listing_gain_pct': 'Listing Pop (%)',
+        'current_price_today': 'Price Today (INR)',
+        'current_gain_pct_today': 'Return Today (%)',
+        'is_surviving_today': 'Above Issue Today?',
+        'time': 'Trading Days Observed'
+    })
+
+    st.dataframe(
+        display_table.style.format({
+            'Issue Price (INR)': '{:.2f}',
+            'Day-1 Close (INR)': '{:.2f}',
+            'Listing Pop (%)': '+{:.1f}%',
+            'Price Today (INR)': '{:.2f}',
+            'Return Today (%)': '{:+.1f}%',
+            'Above Issue Today?': lambda x: 'YES' if x == 1 else 'NO'
+        }),
+        height=400,
+        use_container_width=True
+    )
+
 st.markdown("---")
 st.caption("Quantitative Research Division • SME IPO Survival Analysis Lab • Synchronized with git master branch")
+
