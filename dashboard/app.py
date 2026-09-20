@@ -10,8 +10,13 @@ import plotly.graph_objects as go
 import plotly.express as px
 from pathlib import Path
 import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+if hasattr(sys.stderr, 'reconfigure'):
+    sys.stderr.reconfigure(encoding='utf-8')
 
 # Add project root to sys.path
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -118,7 +123,8 @@ st.sidebar.title("🎛️ SME IPO Parameters")
 st.sidebar.markdown("*Simulate an SME listing scenario to project underpricing survival.*")
 
 st.sidebar.subheader("1. Price & Secondary Liquidity")
-issue_price = st.sidebar.number_input("Issue Price (₹)", min_value=10.0, max_value=1000.0, value=95.0, step=5.0)
+issue_price = st.sidebar.number_input("Issue Price (INR)", min_value=10.0, max_value=1000.0, value=95.0, step=5.0)
+
 listing_gain_pct = st.sidebar.slider("Listing Day Gain (%)", min_value=0.0, max_value=250.0, value=45.0, step=1.0)
 traded_qty_l1 = st.sidebar.slider("Day 1 Traded Volume (Shares)", min_value=10000, max_value=5000000, value=450000, step=25000)
 lot_size = st.sidebar.number_input("Mandated Lot Size (Shares)", min_value=500, max_value=5000, value=1200, step=100)
@@ -335,13 +341,14 @@ with tab2:
 
     e_col1, e_col2, e_col3 = st.columns(3)
     with e_col1:
-        st.markdown(f"**Total Capital Required per Lot:** `₹{lot_cost:,.2f}`")
-        st.markdown(f"**Gross Paper Value on Day 1:** `₹{day1_close * lot_size:,.2f}`")
-        st.markdown(f"**Gross Listing Profit:** `₹{gross_gain_inr:,.2f}` (`+{listing_gain_pct:.1f}%`)")
+        st.markdown(f"**Total Capital Required per Lot:** `INR {lot_cost:,.2f}`")
+        st.markdown(f"**Gross Paper Value on Day 1:** `INR {day1_close * lot_size:,.2f}`")
+        st.markdown(f"**Gross Listing Profit:** `INR {gross_gain_inr:,.2f}` (`+{listing_gain_pct:.1f}%`)")
     with e_col2:
         st.markdown(f"**Estimated Execution Slippage:** `-{slippage_pct:.2f}%`")
-        st.markdown(f"**Slippage Haircut Cost:** `-₹{gross_gain_inr - net_gain_inr:,.2f}`")
-        st.markdown(f"**Net Executable Profit:** `₹{net_gain_inr:,.2f}` (`+{net_executable_gain_pct:.1f}%`)")
+        st.markdown(f"**Slippage Haircut Cost:** `-INR {gross_gain_inr - net_gain_inr:,.2f}`")
+        st.markdown(f"**Net Executable Profit:** `INR {net_gain_inr:,.2f}` (`+{net_executable_gain_pct:.1f}%`)")
+
     with e_col3:
         if s_day20 < 0.30:
             st.markdown('<span class="badge-danger">IMMEDIATE LIQUIDATION PROTOCOL (T+1 to T+5)</span>', unsafe_allow_html=True)
