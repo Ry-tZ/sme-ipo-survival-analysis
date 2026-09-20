@@ -145,9 +145,16 @@ The pod established quantitative holding and exit protocols conditional on Day-1
   - **Mean Cross-Validated Concordance Index:** **0.8140**
 - **Linear Benchmark:** Outperformed the linear Penalized Cox PH model (\( C = 0.7564 \)), confirming strong non-linear interactions between listing gains and secondary turnover.
 
-#### Phase 5.2: Out-of-Time Forward Test (2025 Listings)
-- Evaluated against 18 out-of-time SME IPOs listed in January–February 2025.
-- Zero look-ahead bias: low-pop issues (+2% to +28%) collapsed within 15–30 trading days, whereas high-pop issues (>90%) maintained +138% to +264% gains, validating the empirical model's bifurcation.
+#### Phase 5.2: Out-of-Time Forward Test (Post-December 2024 Listings)
+- **Objective:** Strictly evaluate models trained on pre-2025 data against independent SME IPOs listed after December 31, 2024.
+- **Validation Results:**
+  - **Out-of-Time C-Index:** **0.8944**
+  - **Out-of-Time ROC-AUC:** **0.8813**
+  - **Empirical Bifurcation:**
+    - High-Pop (>50%) & High-Retail (>30x) issues: **78.6% Survival Rate**, Median return today: **+64.6%**.
+    - Low-Pop (<20%) & Low-Retail (<10x) issues: **37.7% Collapse Rate**, Median return today: **+16.5%**.
+  - **Detailed Forward Test:** Sourced in [`src/models/evaluate_out_of_time.py`](../src/models/evaluate_out_of_time.py) and displayed interactively in Tab 4 of [`dashboard/app.py`](../dashboard/app.py).
+
 
 ---
 
