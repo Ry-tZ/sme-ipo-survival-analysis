@@ -20,11 +20,13 @@ def run_cox_ph_regression(df, penalizer=0.1):
         'total_subs_times',
         'log_day1_subs',
         'log_subs_accel',
+        'log_closing_surge',
         'eps',
         'pe_ratio_clipped',
         'debt_to_asset_ratio',
         'is_hot_period'
     ]
+
     
     cox_df = df[features].dropna().copy()
     

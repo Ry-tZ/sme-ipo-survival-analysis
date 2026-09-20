@@ -21,11 +21,13 @@ def run_random_survival_forest(df, n_estimators=100, n_splits=5):
         'total_subs_times',
         'log_day1_subs',
         'log_subs_accel',
+        'log_closing_surge',
         'eps',
         'pe_ratio_clipped',
         'debt_to_asset_ratio',
         'is_hot_period'
     ]
+
     
     X = df[feature_cols].copy().fillna(0)
     y = Surv.from_dataframe('event', 'time', df)

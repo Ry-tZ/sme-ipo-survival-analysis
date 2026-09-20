@@ -17,3 +17,14 @@ data/raw/*
 
 node_modules/
 package-lock.json
+
+# Probes & scratch exploration
+src/data/inspect_*.py
+src/data/probe_*.py
+src/data/test_*.py
+src/data/find_*.py
+src/data/scan_*.py
+src/data/list_*.py
+src/data/*.png
+src/data/*.json
+
