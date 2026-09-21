@@ -216,6 +216,14 @@ C:\ProgramData\anaconda3\python.exe -m streamlit run dashboard/app.py
 - Features live investor budget configuration, family PAN scaling sliders, real-time allotment probability gauge, interactive Plotly binomial distribution chart, and pre-bidding/listing execution playbooks.
 - **Automated Verification:** 100% test pass across unit tests in [`tests/test_recommendation_engine.py`](../tests/test_recommendation_engine.py).
 
+#### Phase 7.4: Dual Workspace Mode & Pure Prospectus Stage (Zero Subscription Dependency)
+- **Problem Resolved:** Addressed the practical reality that before an SME IPO opens for bidding, subscription numbers (Retail x, Total x, Bidding Acceleration, Day 1 x) do not exist.
+- **Dual Workspace Architecture:**
+  1. **Mode 1 (Upcoming SME IPO Bidding Engine):** Features a dedicated **Pure Prospectus Stage** where subscription sliders are hidden by default. The company is evaluated solely on audited DRHP/RHP financials (P/E at issue price, Debt-to-Asset, Operational Firm Age), lot sizing, capital budget, and family PANs.
+  2. **"What-If" Lottery Scenario Matrix:** Computes exact computerized draw-of-lots odds across 6 potential demand tiers (Subdued 3x, Moderate 10x, Strong 25x, High Momentum 50x, Blockbuster 100x, Mega-Frenzy 250x) in advance.
+  3. **Mode 2 (Research & Econometric Study Lab):** Unlocks all post-listing variables (Day-1 pop, volume, slippage, twin matcher, live prices till today).
+- **Automated Tests:** 7 out of 7 unit tests passing.
+
 ---
 
 ## 4. How to Launch the Production Recommendation & Simulation Lab
