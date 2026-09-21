@@ -339,3 +339,131 @@ class SMERecommendationEngine:
             'allotment_info': allotment_info,
             'allocation_info': allocation_info
         }
+
+
+def get_prospectus_scenarios(user_pans: int = 1) -> pd.DataFrame:
+    """
+    Computes what-if lottery allotment odds across standard SME market demand scenarios
+    before any actual bidding opens.
+    """
+    scenarios = [
+        ("Subdued / Low Demand", 3.0),
+        ("Moderate Demand", 10.0),
+        ("Strong Demand", 25.0),
+        ("High Momentum", 50.0),
+        ("Blockbuster / Frenzy", 100.0),
+        ("Mega-Crowded Frenzy", 250.0),
+    ]
+    records = []
+    for label, subs in scenarios:
+        p_single = min(1.0, 1.0 / subs)
+        p_user = 1.0 - (1.0 - p_single) ** max(1, user_pans)
+        records.append({
+            'Demand Scenario': label,
+            'Retail Demand': f"{subs:.0f}x",
+            'Single PAN Odds': f"{p_single * 100:.2f}% (1 in {int(round(subs))})",
+            f'Combined Odds ({user_pans} PANs)': f"{p_user * 100:.2f}%",
+            'Expected Lots': round(user_pans * p_single, 3)
+        })
+    return pd.DataFrame(records)
+
+
+def evaluate_prospectus_fundamentals(
+    issue_price: float,
+    lot_size: Optional[int],
+    firm_age: float,
+    pe_ratio: float,
+    debt_to_asset: float,
+    available_capital_inr: float,
+    family_pans: int = 1
+) -> Dict[str, Any]:
+    """
+    Pure fundamental appraisal using ONLY data available in the DRHP/RHP prospectus
+    prior to the opening of the bidding book.
+    """
+    if lot_size is None or lot_size <= 0:
+        lot_size = get_sebi_lot_size(issue_price)
+    min_amount = float(issue_price * lot_size)
+    available_cap = float(available_capital_inr)
+    pans = max(1, int(family_pans))
+
+    # Fundamental scoring:
+    # 1. Valuation Check (Benchmark SME median PE is 22.5x)
+    pe_clean = max(1.0, float(pe_ratio))
+    if pe_clean <= 20.0:
+        val_status = "Attractively Priced / Value Anchor"
+        val_score = 90
+    elif pe_clean <= 35.0:
+        val_status = "Fairly Valued / Market Multiple"
+        val_score = 75
+    elif pe_clean <= 60.0:
+        val_status = "Aggressive / Rich Valuation"
+        val_score = 45
+    else:
+        val_status = "Extreme Valuation Trap Hazard (>60x P/E)"
+        val_score = 15
+
+    # 2. Balance Sheet Solvency (Debt-to-Asset ratio)
+    debt_clean = max(0.0, float(debt_to_asset))
+    if debt_clean <= 0.30:
+        debt_status = "Conservatively Leveraged / Low Debt"
+        debt_score = 90
+    elif debt_clean <= 0.60:
+        debt_status = "Moderate Leverage"
+        debt_score = 65
+    else:
+        debt_status = "Highly Leveraged / Solvency Strain"
+        debt_score = 25
+
+    # 3. Operational Maturity (Firm Age in Years)
+    age_clean = max(1.0, float(firm_age))
+    if age_clean >= 12.0:
+        age_status = "Established Operating Track Record"
+        age_score = 85
+    elif age_clean >= 5.0:
+        age_status = "Mid-Stage Growth Enterprise"
+        age_score = 65
+    else:
+        age_status = "Early Stage / High Track Record Ambiguity"
+        age_score = 35
+
+    # Composite Fundamental Score (0 - 100)
+    composite_score = round(val_score * 0.45 + debt_score * 0.35 + age_score * 0.20, 1)
+
+    if composite_score >= 75:
+        verdict = "STRONG FUNDAMENTAL CANDIDATE"
+        tier = "Tier 1 (High Quality / Solid Anchor)"
+        action_color = "🟢"
+    elif composite_score >= 50:
+        verdict = "MODERATE FUNDAMENTAL CANDIDATE"
+        tier = "Tier 2 (Acceptable / Demand-Dependent)"
+        action_color = "🟡"
+    else:
+        verdict = "FUNDAMENTAL VALUE / SOLVENCY TRAP"
+        tier = "Tier 3 (High Caution / Avoid on Prospectus)"
+        action_color = "🔴"
+
+    # Capital sizing from prospectus
+    affordable_lots = int(available_cap // min_amount) if available_cap >= min_amount else 0
+    bidding_lots = min(pans, affordable_lots) if composite_score >= 50 else 0
+    deployed_capital = bidding_lots * min_amount
+    spare_capital = available_cap - deployed_capital
+
+    return {
+        'issue_price': issue_price,
+        'lot_size': lot_size,
+        'min_amount_inr': round(min_amount, 2),
+        'available_capital_inr': available_cap,
+        'composite_fundamental_score': composite_score,
+        'verdict': verdict,
+        'tier': tier,
+        'action_color': action_color,
+        'valuation_status': val_status,
+        'debt_status': debt_status,
+        'maturity_status': age_status,
+        'affordable_lots': affordable_lots,
+        'recommended_lots': bidding_lots,
+        'deployed_capital_inr': round(deployed_capital, 2),
+        'spare_capital_inr': round(spare_capital, 2)
+    }
+

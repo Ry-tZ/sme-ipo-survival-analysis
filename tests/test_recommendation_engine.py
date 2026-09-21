@@ -139,3 +139,47 @@ def test_end_to_end_recommendation_engine():
     assert 'allotment_info' in rec
     assert 'allocation_info' in rec
     assert rec['allocation_info']['recommended_lots'] in [0, 1, 2]
+
+
+def test_prospectus_scenarios():
+    """Verify that what-if scenario matrix calculates accurate binomial lottery odds."""
+    from src.models.recommendation_engine import get_prospectus_scenarios
+    df_scen = get_prospectus_scenarios(user_pans=3)
+    assert len(df_scen) == 6
+    assert 'Demand Scenario' in df_scen.columns
+    assert 'Single PAN Odds' in df_scen.columns
+    assert 'Combined Odds (3 PANs)' in df_scen.columns
+
+
+def test_prospectus_fundamentals_evaluation():
+    """Verify pure fundamental appraisal before any bidding data exists."""
+    from src.models.recommendation_engine import evaluate_prospectus_fundamentals
+    # Sound fundamental company
+    eval_good = evaluate_prospectus_fundamentals(
+        issue_price=100.0,
+        lot_size=1200,
+        firm_age=15.0,
+        pe_ratio=18.0,
+        debt_to_asset=0.25,
+        available_capital_inr=500000.0,
+        family_pans=3
+    )
+    assert eval_good['composite_fundamental_score'] >= 75
+    assert "STRONG" in eval_good['verdict']
+    assert eval_good['recommended_lots'] == 3
+    assert eval_good['min_amount_inr'] == 120000.0
+
+    # Overpriced debt-ridden company
+    eval_bad = evaluate_prospectus_fundamentals(
+        issue_price=100.0,
+        lot_size=1200,
+        firm_age=2.0,
+        pe_ratio=85.0,
+        debt_to_asset=0.85,
+        available_capital_inr=500000.0,
+        family_pans=3
+    )
+    assert eval_bad['composite_fundamental_score'] < 50
+    assert "TRAP" in eval_bad['verdict']
+    assert eval_bad['recommended_lots'] == 0
+

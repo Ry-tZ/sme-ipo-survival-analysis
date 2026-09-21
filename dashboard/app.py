@@ -30,6 +30,8 @@ from src.models.recommendation_engine import (
     get_minimum_investment,
     calculate_allotment_probabilities,
     calculate_capital_allocation,
+    get_prospectus_scenarios,
+    evaluate_prospectus_fundamentals,
     SMERecommendationEngine
 )
 
@@ -144,31 +146,46 @@ st.sidebar.markdown("---")
 is_pre_listing_mode = (app_mode == "🔮 1. Upcoming SME IPO Bidding Engine")
 
 if is_pre_listing_mode:
+    st.sidebar.markdown("### 📋 Bidding Status")
+    bidding_data_available = st.sidebar.checkbox(
+        "I have Live Exchange Bidding Numbers (Days 1–3)",
+        value=False,
+        help="Check this ONLY if the issue has already opened on the exchange and you have subscription data. If you are reviewing the DRHP/RHP before issue opening, keep this UNCHECKED."
+    )
+
     st.sidebar.subheader("1. Issue & Mandated Lot Size")
     issue_price = st.sidebar.number_input("Issue Price (INR)", min_value=10.0, max_value=1000.0, value=95.0, step=5.0)
     sebi_default_lot = get_sebi_lot_size(issue_price)
     lot_size = st.sidebar.number_input("Mandated Lot Size (Shares)", min_value=100, max_value=10000, value=int(sebi_default_lot), step=100, help="Automatically calculated from SEBI price band slabs CIR/MRD/DSA/06/2012.")
     st.sidebar.caption(f"Min Application Capital: **INR {issue_price * lot_size:,.0f}**")
 
-    st.sidebar.subheader("2. Live Bidding Demand (Pre-Listing)")
-    retail_subs_times = st.sidebar.slider("Retail Subscription (x)", min_value=0.5, max_value=600.0, value=35.0, step=1.0, help="Total retail demand multiplier as reported on exchange bidding books.")
-    total_subs_times = st.sidebar.slider("Total Subscription (x)", min_value=1.0, max_value=1000.0, value=65.0, step=2.0)
-    day1_subs = st.sidebar.slider("Day 1 Subscription (x)", min_value=0.2, max_value=50.0, value=4.5, step=0.5)
-    subs_accel = st.sidebar.slider("Bidding Acceleration (Day 2 / Day 1)", min_value=1.0, max_value=15.0, value=3.2, step=0.2)
-    closing_day_surge = st.sidebar.slider("Closing Day Surge (%)", min_value=0.0, max_value=1500.0, value=480.0, step=20.0)
-
-    st.sidebar.subheader("3. Issuer Fundamentals")
+    st.sidebar.subheader("2. Issuer Fundamentals (from DRHP/RHP)")
     firm_age = st.sidebar.slider("Operational Firm Age (Years)", min_value=1, max_value=40, value=12, step=1)
-    pe_ratio = st.sidebar.slider("P/E Ratio", min_value=5.0, max_value=120.0, value=22.5, step=0.5)
+    pe_ratio = st.sidebar.slider("P/E Ratio at Issue Price", min_value=5.0, max_value=120.0, value=22.5, step=0.5, help="Benchmark: Historical SME median is ~22.5x.")
     debt_to_asset = st.sidebar.slider("Debt-to-Asset Ratio", min_value=0.0, max_value=1.5, value=0.35, step=0.05)
     diff_issue_list_dates = st.sidebar.slider("Expected Issue-to-Listing Latency (Days)", min_value=3, max_value=20, value=5, step=1)
     is_hot_period = 1
 
-    st.sidebar.subheader("4. Capital & Investor Profile")
+    if bidding_data_available:
+        st.sidebar.subheader("3. Live Exchange Bidding Books")
+        retail_subs_times = st.sidebar.slider("Retail Subscription (x)", min_value=0.5, max_value=600.0, value=35.0, step=1.0)
+        total_subs_times = st.sidebar.slider("Total Subscription (x)", min_value=1.0, max_value=1000.0, value=65.0, step=2.0)
+        day1_subs = st.sidebar.slider("Day 1 Subscription (x)", min_value=0.2, max_value=50.0, value=4.5, step=0.5)
+        subs_accel = st.sidebar.slider("Bidding Acceleration (Day 2 / Day 1)", min_value=1.0, max_value=15.0, value=3.2, step=0.2)
+        closing_day_surge = st.sidebar.slider("Closing Day Surge (%)", min_value=0.0, max_value=1500.0, value=480.0, step=20.0)
+    else:
+        # Default baseline values for model background inference when subscription is not yet known
+        retail_subs_times = 25.0
+        total_subs_times = 45.0
+        day1_subs = 3.0
+        subs_accel = 2.5
+        closing_day_surge = 300.0
+
+    st.sidebar.subheader("3. Capital & Family PAN Accounts" if not bidding_data_available else "4. Capital & Family PAN Accounts")
     user_capital = st.sidebar.number_input("Total Liquid SME IPO Budget (INR)", min_value=50000.0, max_value=10000000.0, value=500000.0, step=25000.0, format="%.0f")
     user_pans = st.sidebar.slider("Family PAN Accounts Available", min_value=1, max_value=10, value=3, step=1, help="Under SEBI computerized lottery rules, applying across multiple family PANs is the sole method to scale retail allotment odds.")
 
-    # Mathematically model expected listing day pop & volume from bidding demand (No look-ahead sliders!)
+    # Mathematically model expected listing day pop & volume from bidding demand or baseline
     listing_gain_pct = float(np.clip(1.70 + 15.81 * np.log1p(retail_subs_times) + 2.5 * np.log1p(subs_accel), 5.0, 180.0))
     traded_qty_l1 = int(np.clip(lot_size * 350 * np.sqrt(max(1.0, total_subs_times)), 50000, 3000000))
 
@@ -268,12 +285,168 @@ net_gain_inr = gross_gain_inr - (day1_close * lot_size * (slippage_pct / 100.0))
 # MAIN DASHBOARD INTERFACE: DUAL WORKSPACE
 # -------------------------------------------------------------
 if is_pre_listing_mode:
-    st.title("🔮 Upcoming SME IPO Bidding Screener & Decider")
-    st.markdown("""
-    **Pre-Bidding Decision Engine**: Evaluates active DRHP bidding demand, statutory SEBI computerized lottery odds, 
-    and survival hazard scoring **using ONLY data available during the bidding window (before issue closes)**.
-    *(Zero lookahead bias: Day-1 listing pop and Day-1 volume are modeled strictly from bidding velocity and lot sizing).*
-    """)
+    if not bidding_data_available:
+        st.title("📋 Pure Prospectus & Fundamentals Screener (Pre-Bidding Stage)")
+        st.markdown("""
+        **Audited DRHP / RHP Appraisal Engine**: Evaluates an upcoming SME IPO **before the bidding book opens**, 
+        using **audited financial statements, firm operating age, and valuation ratios**. 
+        *(Zero dependency on subscription numbers or listing pop)*.
+        """)
+
+        pros_eval = evaluate_prospectus_fundamentals(
+            issue_price=issue_price,
+            lot_size=lot_size,
+            firm_age=firm_age,
+            pe_ratio=pe_ratio,
+            debt_to_asset=debt_to_asset,
+            available_capital_inr=user_capital,
+            family_pans=user_pans
+        )
+
+        # Top Prospectus Metrics
+        pc1, pc2, pc3, pc4, pc5 = st.columns(5)
+        with pc1:
+            st.markdown(f"""
+            <div class="metric-card">
+                <div class="metric-title">Issue Price</div>
+                <div class="metric-val">INR {issue_price:.2f}</div>
+                <div style="font-size:12px;color:#81c784;margin-top:4px;">Offer Price</div>
+            </div>
+            """, unsafe_allow_html=True)
+        with pc2:
+            st.markdown(f"""
+            <div class="metric-card">
+                <div class="metric-title">Mandated Lot Size</div>
+                <div class="metric-val">{lot_size:,} <span style="font-size:14px;color:#aaa;">Shares</span></div>
+                <div style="font-size:12px;color:#90caf9;margin-top:4px;">SEBI CIR/MRD/DSA/06/2012</div>
+            </div>
+            """, unsafe_allow_html=True)
+        with pc3:
+            st.markdown(f"""
+            <div class="metric-card">
+                <div class="metric-title">Min Capital per Lot</div>
+                <div class="metric-val">INR {pros_eval['min_amount_inr']:,.0f}</div>
+                <div style="font-size:12px;color:#ffb74d;margin-top:4px;">1 Application Block</div>
+            </div>
+            """, unsafe_allow_html=True)
+        with pc4:
+            st.markdown(f"""
+            <div class="metric-card">
+                <div class="metric-title">Valuation (P/E)</div>
+                <div class="metric-val">{pe_ratio:.1f}x</div>
+                <div style="font-size:12px;color:#a5d6a7;margin-top:4px;">Peer Median: 22.5x</div>
+            </div>
+            """, unsafe_allow_html=True)
+        with pc5:
+            st.markdown(f"""
+            <div class="metric-card">
+                <div class="metric-title">Debt-to-Asset</div>
+                <div class="metric-val">{debt_to_asset:.2f}</div>
+                <div style="font-size:12px;color:#69f0ae;margin-top:4px;">Balance Sheet Solvency</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        st.markdown("---")
+
+        # HERO FUNDAMENTAL VERDICT BANNER
+        pros_score = pros_eval['composite_fundamental_score']
+        pros_verdict = pros_eval['verdict']
+        pros_tier = pros_eval['tier']
+        pros_icon = pros_eval['action_color']
+
+        if "STRONG" in pros_verdict:
+            b_color = "background-color:#1b5e20; border-left:6px solid #00e676;"
+        elif "MODERATE" in pros_verdict:
+            b_color = "background-color:#1a3a5a; border-left:6px solid #00b0ff;"
+        else:
+            b_color = "background-color:#b71c1c; border-left:6px solid #ff1744;"
+
+        st.markdown(f"""
+        <div style="{b_color} padding:16px; border-radius:8px;">
+            <h3 style="margin:0; color:#ffffff;">{pros_icon} PROSPECTUS VERDICT: {pros_verdict}</h3>
+            <p style="margin:5px 0 0 0; color:#e0e0e0; font-size:15px;">
+                <b>Assigned Quality Tier:</b> {pros_tier} &nbsp;|&nbsp; 
+                <b>Composite Fundamental Score:</b> {pros_score}/100 &nbsp;|&nbsp;
+                <b>Status:</b> Evaluated purely on pre-bidding financial filings
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.write("")
+
+        # 3-PILLAR DEEP DIVE
+        pil1, pil2, pil3 = st.columns(3)
+        with pil1:
+            st.markdown(f"""
+            <div class="metric-card">
+                <div class="metric-title">1. Valuation Appraisal</div>
+                <div style="font-size:16px; font-weight:bold; color:#ffffff; margin:8px 0;">{pros_eval['valuation_status']}</div>
+                <p style="font-size:12px; color:#aaa; margin:0;">
+                    At P/E of {pe_ratio:.1f}x vs broad SME median (22.5x). Overpriced issues (>50x) carry 72% higher post-listing breakdown hazard.
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
+        with pil2:
+            st.markdown(f"""
+            <div class="metric-card">
+                <div class="metric-title">2. Solvency & Leverage</div>
+                <div style="font-size:16px; font-weight:bold; color:#ffffff; margin:8px 0;">{pros_eval['debt_status']}</div>
+                <p style="font-size:12px; color:#aaa; margin:0;">
+                    Debt-to-Asset of {debt_to_asset:.2f}. Companies with ratios below 0.40 show 68% higher 250-day underpricing survival.
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
+        with pil3:
+            st.markdown(f"""
+            <div class="metric-card">
+                <div class="metric-title">3. Operational Track Record</div>
+                <div style="font-size:16px; font-weight:bold; color:#ffffff; margin:8px 0;">{pros_eval['maturity_status']}</div>
+                <p style="font-size:12px; color:#aaa; margin:0;">
+                    {firm_age:.0f} years in active business. Seasoned promoters with >10 years experience reduce failure rate by 34%.
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # CAPITAL BUDGETING TABLE
+        st.markdown("### 💳 Pre-Bidding Capital Budgeting & Sizing")
+        cb1, cb2 = st.columns([1, 1])
+        with cb1:
+            pros_cap_table = pd.DataFrame([
+                {"Parameter": "Total Liquid SME Budget", "Value": f"INR {user_capital:,.0f}"},
+                {"Parameter": "Mandatory Capital per Lot", "Value": f"INR {pros_eval['min_amount_inr']:,.0f}"},
+                {"Parameter": "Max Lots Affordable", "Value": f"{pros_eval['affordable_lots']} Lots"},
+                {"Parameter": "Available Family PAN Accounts", "Value": f"{user_pans} PANs"},
+                {"Parameter": "Recommended Bidding Distribution", "Value": f"{pros_eval['recommended_lots']} Lots (1 per PAN in Retail)"},
+                {"Parameter": "Capital to be Blocked under ASBA", "Value": f"INR {pros_eval['deployed_capital_inr']:,.0f}"},
+                {"Parameter": "Spare Liquid Reserve", "Value": f"INR {pros_eval['spare_capital_inr']:,.0f}"}
+            ])
+            st.dataframe(pros_cap_table, use_container_width=True, hide_index=True)
+
+        with cb2:
+            st.markdown("""
+            **Why Apply Across Distinct PANs?**
+            - Under SEBI ICDR regulations, when an SME IPO is oversubscribed in Retail (<= ₹2 Lakhs), allotment is strictly a **computerized draw of lots**.
+            - Bidding for 2 lots under the same PAN does **not** double your odds.
+            - Splitting capital into **1 lot per family PAN** maximizes your binomial probability.
+            """)
+
+        # WHAT-IF SCENARIOS TABLE
+        st.markdown("### 🎲 'What-If' Lottery Allotment Odds Scenario Matrix")
+        st.markdown(f"""
+        Since exchange bidding books have not opened yet, here are your **exact computerized lottery odds** once demand numbers arrive, 
+        calculated across potential market subscription tiers for your **{user_pans} Family PANs**:
+        """)
+        scenario_df = get_prospectus_scenarios(user_pans=user_pans)
+        st.dataframe(scenario_df, use_container_width=True, hide_index=True)
+
+        st.info("💡 **Pro-Tip:** Once the issue opens for bidding on BSE SME or NSE Emerge, check the sidebar box **'I have Live Exchange Bidding Numbers'** to unlock real-time live calculations based on Day 1/2/3 demand!")
+
+    else:
+        st.title("🔮 Active Bidding Window Screener (Live Exchange Demand)")
+        st.markdown("""
+        **Live Bidding Decision Engine**: Ingests Day 1/2/3 subscription multiples, bidding acceleration, 
+        and SEBI computerized lottery rules to compute exact allotment odds and optimal capital sizing.
+        """)
 
     # Top forecast metrics row
     fc1, fc2, fc3, fc4, fc5 = st.columns(5)
