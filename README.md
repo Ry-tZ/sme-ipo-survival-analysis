@@ -2,6 +2,7 @@
 
 [![Python](https://img.shields.io/badge/Python-3.9%2B-blue.svg)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://share.streamlit.io/deploy?repository=Ry-tZ/sme-ipo-survival-analysis&branch=master&mainModule=dashboard/app.py)
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Ry-tZ/sme-ipo-survival-analysis/blob/master/notebooks/01_colab_reproducible_pipeline.ipynb)
 
 Empirical econometric and machine-learning survival analysis investigating the duration of post-listing underpricing for **436 SME IPOs** listed on the **National Stock Exchange (NSE Emerge)** from 2013 to 2024.
@@ -51,10 +52,15 @@ sme-ipo-survival-analysis/
 
 ## 🚀 Quickstart
 
-### Option A: 1-Click Run via Google Colab
-Click the badge at the top or open `notebooks/01_colab_reproducible_pipeline.ipynb` in Colab to run without local setup.
+### Option A: 1-Click Cloud Dashboard & Recommendation Engine
+Click the badge above or navigate to:
+**[Launch Interactive SME IPO Simulator & Recommendation Engine](https://share.streamlit.io/deploy?repository=Ry-tZ/sme-ipo-survival-analysis&branch=master&mainModule=dashboard/app.py)**
+to run the full simulator, allotment odds calculator, and recommendation engine directly in your browser without installing anything.
 
-### Option B: Local Execution
+### Option B: 1-Click Run via Google Colab
+Click the Colab badge at the top or open `notebooks/01_colab_reproducible_pipeline.ipynb` in Colab to run the econometric pipeline in the cloud.
+
+### Option C: Local Execution
 
 ```bash
 # 1. Clone repository
