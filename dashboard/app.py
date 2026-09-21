@@ -15,25 +15,46 @@ if hasattr(sys.stdout, 'reconfigure'):
 if hasattr(sys.stderr, 'reconfigure'):
     sys.stderr.reconfigure(encoding='utf-8')
 
-# Add project root to sys.path
+# Add project root and src to sys.path
+import importlib
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+for path_candidate in [str(PROJECT_ROOT), str(PROJECT_ROOT / "src"), str(Path.cwd()), str(Path.cwd() / "src")]:
+    if path_candidate not in sys.path:
+        sys.path.insert(0, path_candidate)
 
 from src.data.loader import load_survival_data
 from lifelines import CoxPHFitter, KaplanMeierFitter
 from sksurv.ensemble import RandomSurvivalForest
 from sksurv.util import Surv
-from src.models.recommendation_engine import (
-    get_sebi_lot_size,
-    get_minimum_investment,
-    calculate_allotment_probabilities,
-    calculate_capital_allocation,
-    get_prospectus_scenarios,
-    evaluate_prospectus_fundamentals,
-    SMERecommendationEngine
-)
+
+# Robust import of recommendation engine with reload support for Cloud hot-reloading
+try:
+    import src.models.recommendation_engine as _rec_engine
+    if hasattr(importlib, 'reload'):
+        importlib.reload(_rec_engine)
+    from src.models.recommendation_engine import (
+        get_sebi_lot_size,
+        get_minimum_investment,
+        calculate_allotment_probabilities,
+        calculate_capital_allocation,
+        get_prospectus_scenarios,
+        evaluate_prospectus_fundamentals,
+        SMERecommendationEngine
+    )
+except (ImportError, AttributeError):
+    import models.recommendation_engine as _rec_engine
+    if hasattr(importlib, 'reload'):
+        importlib.reload(_rec_engine)
+    from models.recommendation_engine import (
+        get_sebi_lot_size,
+        get_minimum_investment,
+        calculate_allotment_probabilities,
+        calculate_capital_allocation,
+        get_prospectus_scenarios,
+        evaluate_prospectus_fundamentals,
+        SMERecommendationEngine
+    )
 
 st.set_page_config(
     page_title="SME IPO Survival Simulator",
