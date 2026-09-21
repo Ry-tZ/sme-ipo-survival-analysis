@@ -127,32 +127,77 @@ with st.spinner("Initializing Quantitative Econometric Engine & Training Surviva
     df_raw, kmf, cph, rsf = train_and_cache_models()
 
 # -------------------------------------------------------------
-# SIDEBAR: PARAMETER INPUTS & SCENARIO BUILDER
 # -------------------------------------------------------------
-st.sidebar.title("🎛️ SME IPO Parameters")
-st.sidebar.markdown("*Simulate an SME listing scenario to project underpricing survival.*")
+# SIDEBAR: WORKSPACE MODE SWITCHER & PARAMETERS
+# -------------------------------------------------------------
+st.sidebar.title("🧭 Navigation Workspace")
+app_mode = st.sidebar.radio(
+    "Select Operating Environment:",
+    [
+        "🔮 1. Upcoming SME IPO Bidding Engine",
+        "🔬 2. Research & Econometric Study Lab"
+    ],
+    index=0
+)
+st.sidebar.markdown("---")
 
-st.sidebar.subheader("1. Price & Secondary Liquidity")
-issue_price = st.sidebar.number_input("Issue Price (INR)", min_value=10.0, max_value=1000.0, value=95.0, step=5.0)
+is_pre_listing_mode = (app_mode == "🔮 1. Upcoming SME IPO Bidding Engine")
 
-listing_gain_pct = st.sidebar.slider("Listing Day Gain (%)", min_value=0.0, max_value=250.0, value=45.0, step=1.0)
-traded_qty_l1 = st.sidebar.slider("Day 1 Traded Volume (Shares)", min_value=10000, max_value=5000000, value=450000, step=25000)
-lot_size = st.sidebar.number_input("Mandated Lot Size (Shares)", min_value=500, max_value=5000, value=1200, step=100)
+if is_pre_listing_mode:
+    st.sidebar.subheader("1. Issue & Mandated Lot Size")
+    issue_price = st.sidebar.number_input("Issue Price (INR)", min_value=10.0, max_value=1000.0, value=95.0, step=5.0)
+    sebi_default_lot = get_sebi_lot_size(issue_price)
+    lot_size = st.sidebar.number_input("Mandated Lot Size (Shares)", min_value=100, max_value=10000, value=int(sebi_default_lot), step=100, help="Automatically calculated from SEBI price band slabs CIR/MRD/DSA/06/2012.")
+    st.sidebar.caption(f"Min Application Capital: **INR {issue_price * lot_size:,.0f}**")
 
-st.sidebar.subheader("2. Subscription & Bidding Demand")
-retail_subs_times = st.sidebar.slider("Retail Subscription (x)", min_value=0.5, max_value=600.0, value=35.0, step=1.0)
-total_subs_times = st.sidebar.slider("Total Subscription (x)", min_value=1.0, max_value=1000.0, value=65.0, step=2.0)
-day1_subs = st.sidebar.slider("Day 1 Subscription (x)", min_value=0.2, max_value=50.0, value=4.5, step=0.5)
-subs_accel = st.sidebar.slider("Bidding Acceleration (Day 2 / Day 1)", min_value=1.0, max_value=15.0, value=3.2, step=0.2)
-closing_day_surge = st.sidebar.slider("Closing Day Surge (%)", min_value=0.0, max_value=1500.0, value=480.0, step=20.0)
+    st.sidebar.subheader("2. Live Bidding Demand (Pre-Listing)")
+    retail_subs_times = st.sidebar.slider("Retail Subscription (x)", min_value=0.5, max_value=600.0, value=35.0, step=1.0, help="Total retail demand multiplier as reported on exchange bidding books.")
+    total_subs_times = st.sidebar.slider("Total Subscription (x)", min_value=1.0, max_value=1000.0, value=65.0, step=2.0)
+    day1_subs = st.sidebar.slider("Day 1 Subscription (x)", min_value=0.2, max_value=50.0, value=4.5, step=0.5)
+    subs_accel = st.sidebar.slider("Bidding Acceleration (Day 2 / Day 1)", min_value=1.0, max_value=15.0, value=3.2, step=0.2)
+    closing_day_surge = st.sidebar.slider("Closing Day Surge (%)", min_value=0.0, max_value=1500.0, value=480.0, step=20.0)
 
-st.sidebar.subheader("3. Issuer Fundamentals & Market Era")
-diff_issue_list_dates = st.sidebar.slider("Issue Close to Listing Latency (Days)", min_value=3, max_value=25, value=6, step=1)
-firm_age = st.sidebar.slider("Operational Firm Age (Years)", min_value=1, max_value=40, value=12, step=1)
-pe_ratio = st.sidebar.slider("P/E Ratio", min_value=5.0, max_value=120.0, value=22.5, step=0.5)
-debt_to_asset = st.sidebar.slider("Debt-to-Asset Ratio", min_value=0.0, max_value=1.5, value=0.35, step=0.05)
-market_era = st.sidebar.radio("Market Era Regime", ["Hot Era (2023–2025)", "Pre-2023 / Infancy Era"])
-is_hot_period = 1 if "Hot Era" in market_era else 0
+    st.sidebar.subheader("3. Issuer Fundamentals")
+    firm_age = st.sidebar.slider("Operational Firm Age (Years)", min_value=1, max_value=40, value=12, step=1)
+    pe_ratio = st.sidebar.slider("P/E Ratio", min_value=5.0, max_value=120.0, value=22.5, step=0.5)
+    debt_to_asset = st.sidebar.slider("Debt-to-Asset Ratio", min_value=0.0, max_value=1.5, value=0.35, step=0.05)
+    diff_issue_list_dates = st.sidebar.slider("Expected Issue-to-Listing Latency (Days)", min_value=3, max_value=20, value=5, step=1)
+    is_hot_period = 1
+
+    st.sidebar.subheader("4. Capital & Investor Profile")
+    user_capital = st.sidebar.number_input("Total Liquid SME IPO Budget (INR)", min_value=50000.0, max_value=10000000.0, value=500000.0, step=25000.0, format="%.0f")
+    user_pans = st.sidebar.slider("Family PAN Accounts Available", min_value=1, max_value=10, value=3, step=1, help="Under SEBI computerized lottery rules, applying across multiple family PANs is the sole method to scale retail allotment odds.")
+
+    # Mathematically model expected listing day pop & volume from bidding demand (No look-ahead sliders!)
+    listing_gain_pct = float(np.clip(1.70 + 15.81 * np.log1p(retail_subs_times) + 2.5 * np.log1p(subs_accel), 5.0, 180.0))
+    traded_qty_l1 = int(np.clip(lot_size * 350 * np.sqrt(max(1.0, total_subs_times)), 50000, 3000000))
+
+else:
+    st.sidebar.title("🎛️ Microstructure Parameters")
+    st.sidebar.markdown("*Stress-test historical secondary underpricing with post-listing parameters.*")
+
+    st.sidebar.subheader("1. Price & Secondary Liquidity")
+    issue_price = st.sidebar.number_input("Issue Price (INR)", min_value=10.0, max_value=1000.0, value=95.0, step=5.0)
+    listing_gain_pct = st.sidebar.slider("Listing Day Gain (%)", min_value=0.0, max_value=250.0, value=45.0, step=1.0)
+    traded_qty_l1 = st.sidebar.slider("Day 1 Traded Volume (Shares)", min_value=10000, max_value=5000000, value=450000, step=25000)
+    lot_size = st.sidebar.number_input("Mandated Lot Size (Shares)", min_value=100, max_value=10000, value=1200, step=100)
+
+    st.sidebar.subheader("2. Subscription & Bidding Demand")
+    retail_subs_times = st.sidebar.slider("Retail Subscription (x)", min_value=0.5, max_value=600.0, value=35.0, step=1.0)
+    total_subs_times = st.sidebar.slider("Total Subscription (x)", min_value=1.0, max_value=1000.0, value=65.0, step=2.0)
+    day1_subs = st.sidebar.slider("Day 1 Subscription (x)", min_value=0.2, max_value=50.0, value=4.5, step=0.5)
+    subs_accel = st.sidebar.slider("Bidding Acceleration (Day 2 / Day 1)", min_value=1.0, max_value=15.0, value=3.2, step=0.2)
+    closing_day_surge = st.sidebar.slider("Closing Day Surge (%)", min_value=0.0, max_value=1500.0, value=480.0, step=20.0)
+
+    st.sidebar.subheader("3. Issuer Fundamentals & Market Era")
+    diff_issue_list_dates = st.sidebar.slider("Issue Close to Listing Latency (Days)", min_value=3, max_value=25, value=6, step=1)
+    firm_age = st.sidebar.slider("Operational Firm Age (Years)", min_value=1, max_value=40, value=12, step=1)
+    pe_ratio = st.sidebar.slider("P/E Ratio", min_value=5.0, max_value=120.0, value=22.5, step=0.5)
+    debt_to_asset = st.sidebar.slider("Debt-to-Asset Ratio", min_value=0.0, max_value=1.5, value=0.35, step=0.05)
+    market_era = st.sidebar.radio("Market Era Regime", ["Hot Era (2023–2025)", "Pre-2023 / Infancy Era"])
+    is_hot_period = 1 if "Hot Era" in market_era else 0
+    user_capital = 500000.0
+    user_pans = 3
 
 # -------------------------------------------------------------
 # FEATURE VECTOR CONSTRUCTION
@@ -219,171 +264,95 @@ net_executable_gain_pct = listing_gain_pct - slippage_pct
 net_gain_inr = gross_gain_inr - (day1_close * lot_size * (slippage_pct / 100.0))
 
 # -------------------------------------------------------------
-# MAIN DASHBOARD INTERFACE
 # -------------------------------------------------------------
-st.title("📊 Indian SME IPO Survival Simulator & Microstructure Lab")
-st.markdown(r"""
-Simulate, stress-test, and forecast the **temporal persistence of underpricing** for SME IPOs on **NSE Emerge** and **BSE SME**.
-Predicts the exact probability that secondary market prices will remain above issue price (\( \text{Close}_t > P_{\text{issue}} \)) over trading horizons from \( T+1 \) to \( T+250 \).
-""")
-
-
-# TOP METRICS ROW
-col1, col2, col3, col4, col5 = st.columns(5)
-
-with col1:
-    st.markdown(f"""
-    <div class="metric-card">
-        <div class="metric-title">Projected Half-Life</div>
-        <div class="metric-val">{expected_half_life} <span style="font-size:14px;color:#aaa;">Days</span></div>
-    </div>
-    """, unsafe_allow_html=True)
-
-with col2:
-    st.markdown(f"""
-    <div class="metric-card">
-        <div class="metric-title">1-Month Survival (T+20)</div>
-        <div class="metric-val">{s_day20 * 100:.1f}%</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-with col3:
-    st.markdown(f"""
-    <div class="metric-card">
-        <div class="metric-title">6-Month Survival (T+120)</div>
-        <div class="metric-val">{s_day120 * 100:.1f}%</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-with col4:
-    st.markdown(f"""
-    <div class="metric-card">
-        <div class="metric-title">Relative Crash Hazard</div>
-        <div class="metric-val">{relative_hazard:.2f}x</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-with col5:
-    st.markdown(f"""
-    <div class="metric-card">
-        <div class="metric-title">Net Executable Pop</div>
-        <div class="metric-val">+{net_executable_gain_pct:.1f}%</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-st.markdown("---")
-
-# DASHBOARD TABS
-tab_rec, tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "🎯 Production Recommendation Engine",
-    "📈 Survival Probability Trajectory S(t)",
-    "⚙️ Microstructure & Slippage Engine",
-    "👯 Historical Twin Matcher",
-    "🔬 Econometric Weights & Diagnostics",
-    "📊 Live Company Performance (Till Today)"
-])
-
+# MAIN DASHBOARD INTERFACE: DUAL WORKSPACE
 # -------------------------------------------------------------
-# TAB: PRODUCTION RECOMMENDATION & ALLOTMENT ENGINE
-# -------------------------------------------------------------
-with tab_rec:
-    st.subheader("🎯 Institutional Recommendation, Allotment Probability & Capital Allocation Engine")
+if is_pre_listing_mode:
+    st.title("🔮 Upcoming SME IPO Bidding Screener & Decider")
     st.markdown("""
-    Actionable pre-bidding decision support system combining **SEBI SME statutory lot sizing**, 
-    **computerized lottery allotment odds (RII/NII)**, **ASBA opportunity cost**, and **survival hazard scoring**.
+    **Pre-Bidding Decision Engine**: Evaluates active DRHP bidding demand, statutory SEBI computerized lottery odds, 
+    and survival hazard scoring **using ONLY data available during the bidding window (before issue closes)**.
+    *(Zero lookahead bias: Day-1 listing pop and Day-1 volume are modeled strictly from bidding velocity and lot sizing).*
     """)
-    
-    # Portfolio Capital & Investor Settings
-    st.markdown("### 💼 Investor Profile & Capital Constraints")
-    c_cap1, c_cap2, c_cap3 = st.columns(3)
-    with c_cap1:
-        user_capital = st.number_input("Total Liquid SME IPO Capital Budget (INR)", min_value=50000.0, max_value=10000000.0, value=500000.0, step=25000.0, format="%.0f")
-    with c_cap2:
-        user_pans = st.slider("Available Distinct Family PAN Accounts", min_value=1, max_value=10, value=3, step=1, help="Under SEBI lottery rules, applying 1 lot across multiple PANs is the only mechanism to increase retail allotment odds.")
-    with c_cap3:
-        risk_profile_pref = st.selectbox("Investor Mandate", ["Balanced Capital Compounder", "Aggressive Multi-bagger Hunter", "Listing Day Pop Scalper"])
 
-    st.markdown("### 🏢 SME IPO Target Selection")
-    # Load out-of-time post-2024 dataset for real examples
-    oot_path = PROJECT_ROOT / "data" / "processed" / "sme_out_of_time_post2024_evaluation.csv"
-    has_oot = oot_path.exists()
-    
-    ipo_options = ["Custom Active Bidding IPO"]
-    oot_df = None
-    if has_oot:
-        oot_df = pd.read_csv(oot_path)
-        sample_names = oot_df['company_name'].dropna().unique().tolist()[:30]
-        ipo_options = ["Custom Active Bidding IPO"] + sample_names
-        
-    selected_target = st.selectbox("Select Target IPO or Model Custom Case", ipo_options)
-    
-    if selected_target != "Custom Active Bidding IPO" and oot_df is not None:
-        target_row = oot_df[oot_df['company_name'] == selected_target].iloc[0]
-        rec_issue_price = float(target_row['issue_price'])
-        rec_lot_size = get_sebi_lot_size(rec_issue_price)
-        rec_retail_subs = float(target_row['retail_subs_times']) if 'retail_subs_times' in target_row and not pd.isna(target_row['retail_subs_times']) else float(target_row.get('total_subs_times', 40.0) * 0.8)
-        rec_total_subs = float(target_row['total_subs_times'])
-        rec_pe = float(target_row['pe_ratio_clipped'])
-        rec_age = float(target_row['firm_age'])
-        rec_pop = float(target_row['listing_gain_pct'])
-        rec_name = selected_target
-        st.info(f"Loaded out-of-time benchmark parameters for **{selected_target}**: Issue Price INR {rec_issue_price:.2f} | Retail Subs: {rec_retail_subs:.1f}x | Total Subs: {rec_total_subs:.1f}x")
-    else:
-        rec_name = st.text_input("Company Name", "Apex High-Tech Precision Engineering Ltd.")
-        r_c1, r_c2, r_c3, r_c4 = st.columns(4)
-        with r_c1:
-            rec_issue_price = st.number_input("Issue Price (INR)", min_value=10.0, max_value=1000.0, value=float(issue_price), step=5.0, key="rec_ip")
-        with r_c2:
-            default_sebi_lot = get_sebi_lot_size(rec_issue_price)
-            rec_lot_size = st.number_input("Lot Size (Shares)", min_value=100, max_value=10000, value=int(default_sebi_lot), step=100, key="rec_ls")
-        with r_c3:
-            rec_retail_subs = st.number_input("Retail Subscription (x)", min_value=0.1, max_value=1500.0, value=float(retail_subs_times), step=5.0, key="rec_rs")
-        with r_c4:
-            rec_total_subs = st.number_input("Total Subscription (x)", min_value=0.1, max_value=2000.0, value=float(total_subs_times), step=10.0, key="rec_ts")
-        rec_pe = float(pe_ratio)
-        rec_age = float(firm_age)
-        rec_pop = float(listing_gain_pct)
+    # Top forecast metrics row
+    fc1, fc2, fc3, fc4, fc5 = st.columns(5)
+    with fc1:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-title">Forecasted Day-1 Pop</div>
+            <div class="metric-val">+{listing_gain_pct:.1f}%</div>
+            <div style="font-size:12px;color:#81c784;margin-top:4px;">Demand-Driven Forecast</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with fc2:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-title">Projected Half-Life</div>
+            <div class="metric-val">{expected_half_life} <span style="font-size:14px;color:#aaa;">Days</span></div>
+            <div style="font-size:12px;color:#90caf9;margin-top:4px;">Expected Gain Duration</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with fc3:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-title">1-Month Survival (T+20)</div>
+            <div class="metric-val">{s_day20 * 100:.1f}%</div>
+            <div style="font-size:12px;color:#a5d6a7;margin-top:4px;">Probability Close > Issue</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with fc4:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-title">6-Month Survival (T+120)</div>
+            <div class="metric-val">{s_day120 * 100:.1f}%</div>
+            <div style="font-size:12px;color:#69f0ae;margin-top:4px;">Medium-Term Compounder</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with fc5:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-title">Min Application Amount</div>
+            <div class="metric-val">INR {issue_price * lot_size:,.0f}</div>
+            <div style="font-size:12px;color:#ffb74d;margin-top:4px;">1 Lot ({lot_size:,} Shs)</div>
+        </div>
+        """, unsafe_allow_html=True)
 
-    # Initialize Engine with trained RSF & Cox
+    st.markdown("---")
+
+    # PRE-BIDDING RECOMMENDATION LOGIC
     engine = SMERecommendationEngine(rsf_model=rsf, cph_model=cph)
-    
-    # Feature dictionary for ML scoring
     rec_features = {
-        'listing_gain_pct': rec_pop,
-        'firm_age': rec_age,
-        'diff_issue_list_dates': float(diff_issue_list_dates),
-        'log_traded_qty': np.log1p(rec_lot_size * 400),
-        'total_subs_times': rec_total_subs,
-        'log_retail_subs': np.log1p(rec_retail_subs),
+        'listing_gain_pct': listing_gain_pct,
+        'firm_age': firm_age,
+        'diff_issue_list_dates': diff_issue_list_dates,
+        'log_traded_qty': np.log1p(traded_qty_l1),
+        'total_subs_times': total_subs_times,
+        'log_retail_subs': np.log1p(retail_subs_times),
         'log_day1_subs': np.log1p(day1_subs),
         'log_subs_accel': np.log1p(subs_accel),
-        'log_closing_surge': np.log1p(closing_day_surge),
-        'eps': 8.5,
-        'pe_ratio_clipped': min(100.0, rec_pe),
-        'debt_to_asset_ratio': 0.35,
+        'log_closing_surge': np.log1p(closing_day_surge / 100.0),
+        'eps': 5.0,
+        'pe_ratio_clipped': min(100.0, pe_ratio),
+        'debt_to_asset_ratio': debt_to_asset,
         'is_hot_period': 1.0
     }
-    
+
     rec_result = engine.generate_recommendation(
-        company_name=rec_name,
-        issue_price=rec_issue_price,
-        retail_subs_times=rec_retail_subs,
-        total_subs_times=rec_total_subs,
+        company_name="Active Target IPO",
+        issue_price=issue_price,
+        retail_subs_times=retail_subs_times,
+        total_subs_times=total_subs_times,
         available_capital_inr=user_capital,
-        lot_size=rec_lot_size,
+        lot_size=lot_size,
         family_pans=user_pans,
         features_dict=rec_features
     )
-    
+
     alloc = rec_result['allocation_info']
     allot = rec_result['allotment_info']
     risk = rec_result['risk_profile']
-    min_inv = rec_result['min_amount_inr']
-    
-    # Visual Highlights
-    st.markdown("---")
-    
-    # ACTION BANNER
+
     action_text = alloc.get('recommended_action', 'EVALUATING')
     if "STRONG SUBSCRIBE" in action_text:
         badge_style = "background-color:#1b5e20; border-left:6px solid #00e676; padding:16px; border-radius:8px;"
@@ -400,46 +369,46 @@ with tab_rec:
 
     st.markdown(f"""
     <div style="{badge_style}">
-        <h3 style="margin:0; color:#ffffff;">{action_icon} RECOMMENDATION: {action_text}</h3>
+        <h3 style="margin:0; color:#ffffff;">{action_icon} BIDDING VERDICT: {action_text}</h3>
         <p style="margin:5px 0 0 0; color:#e0e0e0; font-size:15px;">
             <b>Assigned Hazard Tier:</b> {risk['risk_quintile']} &nbsp;|&nbsp; 
             <b>RSF Risk Score:</b> {risk['risk_score']:.2f} &nbsp;|&nbsp;
-            <b>Conviction Score:</b> {alloc.get('conviction_score', 50)}/100
+            <b>Conviction Rating:</b> {alloc.get('conviction_score', 50)}/100
         </p>
     </div>
     """, unsafe_allow_html=True)
-    
+
     st.write("")
-    
-    # 4 STAT CARDS
-    sc1, sc2, sc3, sc4 = st.columns(4)
-    with sc1:
+
+    # ALLOTMENT ODDS ROW
+    a_c1, a_c2, a_c3, a_c4 = st.columns(4)
+    with a_c1:
         st.markdown(f"""
         <div class="metric-card">
             <div class="metric-title">Mandatory Lot Size</div>
-            <div class="metric-val">{rec_lot_size:,} <span style="font-size:14px;color:#aaa;">Shares</span></div>
-            <div style="font-size:12px;color:#81c784;margin-top:4px;">SEBI Price-Band Compliant</div>
+            <div class="metric-val">{lot_size:,} <span style="font-size:14px;color:#aaa;">Shares</span></div>
+            <div style="font-size:12px;color:#81c784;margin-top:4px;">SEBI Slabs CIR/MRD/DSA/06/2012</div>
         </div>
         """, unsafe_allow_html=True)
-    with sc2:
+    with a_c2:
         st.markdown(f"""
         <div class="metric-card">
-            <div class="metric-title">Min Application Amount</div>
-            <div class="metric-val">INR {min_inv:,.0f}</div>
-            <div style="font-size:12px;color:#90caf9;margin-top:4px;">1 Lot @ INR {rec_issue_price:.2f}</div>
+            <div class="metric-title">Min Application Capital</div>
+            <div class="metric-val">INR {issue_price * lot_size:,.0f}</div>
+            <div style="font-size:12px;color:#90caf9;margin-top:4px;">1 Lot @ INR {issue_price:.2f}</div>
         </div>
         """, unsafe_allow_html=True)
-    with sc3:
+    with a_c3:
         p_single = allot['p_retail_single_pct']
         ratio_str = allot['p_retail_ratio']
         st.markdown(f"""
         <div class="metric-card">
-            <div class="metric-title">Retail Allotment Odds (1 PAN)</div>
+            <div class="metric-title">Retail Lottery Odds (1 PAN)</div>
             <div class="metric-val">{p_single:.2f}%</div>
             <div style="font-size:12px;color:#ffb74d;margin-top:4px;">{ratio_str}</div>
         </div>
         """, unsafe_allow_html=True)
-    with sc4:
+    with a_c4:
         p_combined = alloc.get('prob_at_least_one_allotment_pct', p_single)
         st.markdown(f"""
         <div class="metric-card">
@@ -449,12 +418,12 @@ with tab_rec:
         </div>
         """, unsafe_allow_html=True)
 
-    # CAPITAL ALLOCATION & ALLOTMENT CURVE
-    st.markdown("### 📊 Capital Sizing Breakdown & Multi-PAN Allotment Curve")
+    # CAPITAL ALLOCATION & MULTI-PAN PLOT
+    st.markdown("### 📊 Capital Sizing Breakdown & Multi-PAN Allotment Scaling")
     col_alloc_left, col_alloc_right = st.columns([1, 1])
-    
+
     with col_alloc_left:
-        st.markdown("#### 💳 Capital Sizing & ASBA Costs")
+        st.markdown("#### 💳 Capital Sizing & ASBA Opportunity Cost")
         if alloc['status'] == 'INSUFFICIENT_CAPITAL':
             st.error(alloc['message'])
         else:
@@ -462,7 +431,7 @@ with tab_rec:
             rec_cap = alloc['recommended_capital_inr']
             spare_cap = alloc['spare_capital_inr']
             asba_cost = alloc['total_asba_opportunity_cost_inr']
-            
+
             summary_table = pd.DataFrame([
                 {"Parameter": "Total Available Liquid Budget", "Value": f"INR {user_capital:,.0f}"},
                 {"Parameter": "Recommended Bidding Lots", "Value": f"{rec_lots} Lot{'s' if rec_lots != 1 else ''} ({alloc['category']})"},
@@ -473,13 +442,12 @@ with tab_rec:
                 {"Parameter": "Recommended Holding Horizon", "Value": f"{alloc['holding_horizon']}"}
             ])
             st.dataframe(summary_table, use_container_width=True, hide_index=True)
-            
             st.info(f"**Execution Order Protocol:** {alloc['exit_execution_rule']}")
 
     with col_alloc_right:
         st.markdown("#### 🎲 Multi-PAN Allotment Scaling Curve")
         pan_table_df = pd.DataFrame(allot['multi_pan_table'])
-        
+
         fig_pan = go.Figure()
         fig_pan.add_trace(go.Bar(
             x=pan_table_df['num_pans'],
@@ -500,10 +468,9 @@ with tab_rec:
         st.plotly_chart(fig_pan, use_container_width=True)
         st.caption(f"Green bar highlights your current setup of **{user_pans} Family PANs** under SEBI computerized lottery rules.")
 
-    # INSTITUTIONAL CHECKLIST & STRATEGY PLAYBOOK
+    # INSTITUTIONAL PLAYBOOK
     st.markdown("### 📋 Institutional Pre-Bidding & Listing Playbook")
     pl_c1, pl_c2, pl_c3 = st.columns(3)
-    
     with pl_c1:
         st.markdown("""
         **1. Pre-Bidding Due Diligence**
@@ -511,7 +478,6 @@ with tab_rec:
         - Check Day 2 bidding acceleration ($> 2.5\\times$ indicates institutional crowding).
         - Ensure UPI ASBA mandate is approved before 5:00 PM on Issue Closing Day.
         """)
-        
     with pl_c2:
         st.markdown("""
         **2. Optimal Application Category**
@@ -519,7 +485,6 @@ with tab_rec:
         - Split capital into **1 lot per distinct family PAN** in Retail (up to INR 2 Lakhs).
         - Only apply in sNII (> INR 2L to 10L) if total liquid capital $> 15$ Lakhs and NII quota is $< 30\\times$.
         """)
-        
     with pl_c3:
         st.markdown(f"""
         **3. Listing Day Execution Rule**
@@ -528,286 +493,396 @@ with tab_rec:
         - **Stop-loss Discipline:** Never hold a Q4/Q5 issue beyond Day 1 if traded volume dips below 150,000 shares.
         """)
 
-
-# TAB 1: SURVIVAL SIMULATION CURVE
-with tab1:
-    st.subheader("Dynamic Underpricing Survival Curves S(t)")
-    st.markdown("Comparing **Simulated Company (Random Survival Forest)** vs. **Simulated Company (Penalized Cox PH)** vs. **Historical Baseline Median**.")
-
-    fig = go.Figure()
-
-    # RSF Non-Linear Prediction
-    fig.add_trace(go.Scatter(
+    # MODE 1: SURVIVAL TRAJECTORY & BENCHMARK
+    st.markdown("### 📈 Projected Underpricing Survival Curve S(t)")
+    st.markdown(r"Projects the exact probability that secondary market prices will remain above issue price (\( \text{Close}_t > P_{\text{issue}} \)) from Day 1 to Day 250.")
+    
+    fig_pre_surv = go.Figure()
+    fig_pre_surv.add_trace(go.Scatter(
         x=timeline,
         y=rsf_probs,
         mode='lines',
-        name='Simulated Profile (Random Survival Forest)',
-        line=dict(color='#00e5ff', width=3.5)
+        name='Upcoming IPO Forecast (Random Survival Forest)',
+        line=dict(color='#00e676' if 'SUBSCRIBE' in action_text else '#ff1744', width=3.5)
     ))
-
-    # Cox PH Prediction
-    fig.add_trace(go.Scatter(
-        x=timeline,
-        y=cox_probs,
-        mode='lines',
-        name='Simulated Profile (Penalized Cox PH)',
-        line=dict(color='#ffd600', width=2.5, dash='dash')
-    ))
-
-    # Historical Cohort Baseline
-    fig.add_trace(go.Scatter(
+    fig_pre_surv.add_trace(go.Scatter(
         x=timeline,
         y=km_probs,
         mode='lines',
-        name='Empirical Baseline Cohort Median (Kaplan-Meier)',
+        name='Broad SME Market Baseline Median',
         line=dict(color='#78909c', width=2.0, dash='dot')
     ))
-
-    # Add 50% Threshold line
-    fig.add_hline(y=0.5, line_dash="dash", line_color="#ef5350", annotation_text="50% Median Survival Threshold", annotation_position="bottom right")
-
-    fig.update_layout(
+    fig_pre_surv.add_hline(y=0.5, line_dash="dash", line_color="#ffd600", annotation_text="50% Median Survival Threshold", annotation_position="bottom right")
+    fig_pre_surv.update_layout(
         template="plotly_dark",
-        height=480,
-        margin=dict(l=40, r=40, t=30, b=40),
+        height=350,
+        margin=dict(l=40, r=40, t=20, b=40),
         xaxis_title="Trading Days Since Listing (t)",
-        yaxis_title="Probability S(t) of Staying Above Issue Price",
-        yaxis=dict(range=[0.0, 1.05], gridcolor='#37474f'),
-        xaxis=dict(gridcolor='#37474f'),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        yaxis_title="Probability Above Issue Price S(t)",
+        yaxis_range=[0, 1.05]
     )
+    st.plotly_chart(fig_pre_surv, use_container_width=True)
 
-    st.plotly_chart(fig, use_container_width=True)
-
-    # Risk Milestones Table
-    st.markdown("### 🎯 Horizon Survival Probabilities & Hazard Milestones")
-    m_col1, m_col2, m_col3, m_col4, m_col5 = st.columns(5)
-    
-    m_col1.metric("T+5 Days (1 Week)", f"{s_day5*100:.1f}%", delta=f"{(s_day5 - get_surv_at(5, timeline, km_probs))*100:+.1f}% vs Cohort")
-    m_col2.metric("T+20 Days (1 Month)", f"{s_day20*100:.1f}%", delta=f"{(s_day20 - get_surv_at(20, timeline, km_probs))*100:+.1f}% vs Cohort")
-    m_col3.metric("T+60 Days (1 Quarter)", f"{s_day60*100:.1f}%", delta=f"{(s_day60 - get_surv_at(60, timeline, km_probs))*100:+.1f}% vs Cohort")
-    m_col4.metric("T+120 Days (6 Months)", f"{s_day120*100:.1f}%", delta=f"{(s_day120 - get_surv_at(120, timeline, km_probs))*100:+.1f}% vs Cohort")
-    m_col5.metric("T+240 Days (1 Year)", f"{s_day240*100:.1f}%", delta=f"{(s_day240 - get_surv_at(240, timeline, km_probs))*100:+.1f}% vs Cohort")
-
-# TAB 2: MICROSTRUCTURE & EXECUTABLE GAIN
-with tab2:
-    st.subheader("SEBI Mandated Lot Size & Net Execution Slippage")
-    st.markdown("""
-    In the Indian SME ecosystem, SEBI ICDR regulations mandate minimum application ticket sizes (mean INR 126,000). 
-    Secondary market liquidity dry-ups create execution friction that cuts into theoretical paper returns.
-    """)
-
-    e_col1, e_col2, e_col3 = st.columns(3)
-    with e_col1:
-        st.markdown(f"**Total Capital Required per Lot:** `INR {lot_cost:,.2f}`")
-        st.markdown(f"**Gross Paper Value on Day 1:** `INR {day1_close * lot_size:,.2f}`")
-        st.markdown(f"**Gross Listing Profit:** `INR {gross_gain_inr:,.2f}` (`+{listing_gain_pct:.1f}%`)")
-    with e_col2:
-        st.markdown(f"**Estimated Execution Slippage:** `-{slippage_pct:.2f}%`")
-        st.markdown(f"**Slippage Haircut Cost:** `-INR {gross_gain_inr - net_gain_inr:,.2f}`")
-        st.markdown(f"**Net Executable Profit:** `INR {net_gain_inr:,.2f}` (`+{net_executable_gain_pct:.1f}%`)")
-
-    with e_col3:
-        if s_day20 < 0.30:
-            st.markdown('<span class="badge-danger">IMMEDIATE LIQUIDATION PROTOCOL (T+1 to T+5)</span>', unsafe_allow_html=True)
-            st.info("Severe collapse hazard. Stock profile indicates immediate post-listing breakdown. Do not hold beyond first 5 days.")
-        elif s_day20 < 0.70:
-            st.markdown('<span class="badge-warn">PARTIAL PROFIT HARVESTING (T+20)</span>', unsafe_allow_html=True)
-            st.warning("Moderate persistence. Harvest 50% profit by Day 20, trail remainder on 10-day moving average.")
-        else:
-            st.markdown('<span class="badge-pass">MOMENTUM EXTENSION PROTOCOL (T+120)</span>', unsafe_allow_html=True)
-            st.success("High persistence profile. Retail breadth and day-1 volume provide deep secondary price support. Hold through T+120.")
-
-# TAB 3: HISTORICAL TWIN MATCHER
-with tab3:
-    st.subheader("👯 Historical Twin Matcher (Finding Closest Real SME IPOs)")
-    st.markdown("Surfaces the top 3 actual historical companies from our 436 SME IPO cohort that share the most similar demand and microstructure characteristics.")
-
-    # Compute Euclidean distance on normalized key features
-    norm_gain = (df_raw['listing_gain_pct'] - listing_gain_pct) / 40.0
-    norm_vol = (df_raw['traded_qty_l1'] - traded_qty_l1) / 500000.0
-    norm_ret = (df_raw['retail_subs_times'] - retail_subs_times) / 50.0
-    norm_tot = (df_raw['total_subs_times'] - total_subs_times) / 70.0
-    
-    dist = np.sqrt(norm_gain**2 + norm_vol**2 + norm_ret**2 + norm_tot**2)
-    top_twin_indices = dist.nsmallest(3).index
-
-    twins = df_raw.loc[top_twin_indices].copy()
-    
-    for _, twin in twins.iterrows():
-        curr_price_str = f"INR {twin['current_price_today']:.2f}" if pd.notna(twin.get('current_price_today')) else "N/A"
-        curr_gain_str = f"{twin['current_gain_pct_today']:+.1f}%" if pd.notna(twin.get('current_gain_pct_today')) else "N/A"
-        is_surv_now = twin.get('is_surviving_today', 0) == 1
-        live_badge = '<span class="badge-pass">ABOVE ISSUE PRICE TODAY</span>' if is_surv_now else '<span class="badge-danger">BELOW ISSUE PRICE TODAY</span>'
-        hist_badge = '<span class="badge-danger">BREACHED</span>' if twin['event'] == 1 else '<span class="badge-pass">SURVIVED</span>'
-
-        st.markdown(f"""
-        <div style="background:#263238; border-radius:6px; padding:12px; margin-bottom:12px; border-left:4px solid #00e5ff;">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-                <h4 style="margin:0; color:#ffffff;">{twin['company_name']} ({twin['symbol']}) &nbsp; {live_badge}</h4>
-                <span style="color:#aaa;">Listed: {twin['listing_date']}</span>
-            </div>
-            <div style="display:flex; gap:25px; margin-top:8px; font-size:14px; color:#cfd8dc;">
-                <div>Issue Price: <b>INR {twin['issue_price']}</b></div>
-                <div>Listing Pop: <b>+{twin['listing_gain_pct']:.1f}%</b></div>
-                <div>Retail Subs: <b>{twin['retail_subs_times']:.1f}x</b></div>
-                <div>Current Price Today: <b>{curr_price_str}</b></div>
-                <div>Current Return Today: <b>{curr_gain_str}</b></div>
-                <div>Historical Survival: <b>{twin['time']} trading days</b> ({hist_badge})</div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-# TAB 4: ECONOMETRIC WEIGHTS
-with tab4:
-    st.subheader("🔬 Model Weights & Concordance Indices")
-    c_col1, c_col2 = st.columns(2)
-    
-    with c_col1:
-        st.markdown("**Penalized Cox Proportional Hazards Model (Full Cohort N=436)**")
-        st.caption("Concordance Index: **0.7564** | Regularization: Elastic-Net (L1=0.5, L2=0.5)")
-        cph_summary = cph.summary[['coef', 'exp(coef)', 'se(coef)', 'p']].rename(columns={'exp(coef)': 'hazard_ratio'})
-        st.dataframe(cph_summary.style.format({
-            'coef': '{:.4f}',
-            'hazard_ratio': '{:.4f}',
-            'se(coef)': '{:.4f}',
-            'p': '{:.4e}'
-        }), use_container_width=True)
-        
-    with c_col2:
-        st.markdown("**Random Survival Forest (5-Fold Cross-Validation)**")
-        st.caption("Mean CV C-Index: **0.8140** | Trees: 80 | Min Samples Leaf: 5")
-        rsf_df = pd.DataFrame({
-            "Validation Fold": ["Fold 1", "Fold 2", "Fold 3", "Fold 4", "Fold 5", "Mean CV"],
-            "C-Index": [0.7844, 0.8711, 0.7788, 0.8062, 0.8295, 0.8140]
-        })
-        st.dataframe(rsf_df, use_container_width=True)
-
-    st.markdown("---")
-    st.subheader("🎯 Out-of-Time Forward Test: Post-December 2024 SME IPOs")
-    st.markdown("""
-    **Model Generalization Test:** Evaluating models trained *strictly* on pre-2025 data (2013–2024) 
-    against independent SME IPOs listed **after December 31, 2024**.
-    """)
-
-    oot_c1, oot_c2, oot_c3, oot_c4 = st.columns(4)
-    with oot_c1:
-        st.metric("Out-of-Time C-Index", "0.8944", delta="+0.0804 vs In-Sample")
-    with oot_c2:
-        st.metric("Out-of-Time ROC-AUC", "0.8813", delta="Excellent Discrimination")
-    with oot_c3:
-        st.metric("High-Risk Collapse Accuracy", "87.5%", delta="7/8 Low-Pop Collapsed")
-    with oot_c4:
-        st.metric("Low-Risk Survival Accuracy", "100.0%", delta="10/10 High-Pop Survived")
-
-    test18_path = PROJECT_ROOT / "data" / "processed" / "sme_test_data_2025.csv"
-    if test18_path.exists():
-        df_test18 = pd.read_csv(test18_path)
-        # Predict risk with rsf
-        test_features = df_test18.copy()
-        test_features['firm_age'] = 12.0
-        test_features['diff_issue_list_dates'] = 6.0
-        test_features['log_traded_qty'] = 12.5
-        test_features['total_subs_times'] = 25.0
-        test_features['log_retail_subs'] = 3.5
-        test_features['log_day1_subs'] = 1.5
-        test_features['log_subs_accel'] = 1.2
-        test_features['log_closing_surge'] = 1.5
-        test_features['eps'] = 5.0
-        test_features['pe_ratio_clipped'] = 22.0
-        test_features['debt_to_asset_ratio'] = 0.35
-        test_features['is_hot_period'] = 1
-        
-        df_test18['Predicted Risk Score'] = rsf.predict(test_features[RSF_FEATURES])
-        df_test18['Model Risk Tier'] = pd.qcut(df_test18['Predicted Risk Score'], 3, labels=['Low Risk', 'Medium Risk', 'High Risk'])
-
-        
-        df_display_oot = df_test18[['company_name', 'listing_date', 'listing_gain_pct', 'current_gain_loss_pct', 'event', 'Model Risk Tier', 'Predicted Risk Score']].sort_values('Predicted Risk Score').rename(columns={
+    # RECENT POST-2024 BENCHMARK
+    oot_path = PROJECT_ROOT / "data" / "processed" / "sme_out_of_time_post2024_evaluation.csv"
+    if oot_path.exists():
+        st.markdown("### 🔍 Benchmark Against Recent Post-2024 Listings")
+        oot_df = pd.read_csv(oot_path)
+        sample_display = oot_df[['company_name', 'listing_date', 'issue_price', 'listing_gain_pct', 'current_gain_loss_pct', 'rsf_risk_score', 'risk_quintile']].head(15).rename(columns={
             'company_name': 'Company Name',
             'listing_date': 'Listing Date',
-            'listing_gain_pct': 'Listing Pop (%)',
-            'current_gain_loss_pct': 'Return Today (%)',
-            'event': 'Collapsed? (1=Yes, 0=No)'
+            'issue_price': 'Issue Price (INR)',
+            'listing_gain_pct': 'Day-1 Pop (%)',
+            'current_gain_loss_pct': 'Current Return (%)',
+            'rsf_risk_score': 'RSF Risk Score',
+            'risk_quintile': 'Model Risk Tier'
         })
-        
         st.dataframe(
-            df_display_oot.style.format({
-                'Listing Pop (%)': '+{:.1f}%',
-                'Return Today (%)': '{:+.1f}%',
-                'Predicted Risk Score': '{:.2f}',
-                'Collapsed? (1=Yes, 0=No)': lambda x: 'YES (COLLAPSED)' if x == 1 else 'NO (SURVIVING)'
+            sample_display.style.format({
+                'Issue Price (INR)': '{:.2f}',
+                'Day-1 Pop (%)': '+{:.1f}%',
+                'Current Return (%)': '{:+.1f}%',
+                'RSF Risk Score': '{:.2f}'
             }),
+            height=300,
             use_container_width=True
         )
 
-
-
-# TAB 5: LIVE COHORT PERFORMANCE TILL TODAY
-with tab5:
-    st.subheader("📊 Live SME IPO Market Performance & Status Till Today")
-    st.markdown("""
-    Tracking the **real-time current market price and total return** across our **436 SME IPO cohort** 
-    sourced directly from live exchange feeds (NSE Emerge and BSE SME).
+else:
+    st.title("🔬 Post-Listing Research & Econometric Study Lab")
+    st.markdown(r"""
+    Simulate, stress-test, and analyze the **temporal persistence of underpricing** for SME IPOs on **NSE Emerge** and **BSE SME**.
+    Study secondary market microstructure, slippage haircuts, historical twin matches, and long-run survival trajectories.
     """)
 
-    # Top stats
-    total_tracked = len(df_raw)
-    surv_today = (df_raw['current_gain_pct_today'] > 0).sum()
-    collapsed_today = (df_raw['current_gain_pct_today'] <= 0).sum()
-    median_gain_today = df_raw['current_gain_pct_today'].median()
+    # TOP METRICS ROW FOR RESEARCH LAB
+    col1, col2, col3, col4, col5 = st.columns(5)
+    with col1:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-title">Projected Half-Life</div>
+            <div class="metric-val">{expected_half_life} <span style="font-size:14px;color:#aaa;">Days</span></div>
+        </div>
+        """, unsafe_allow_html=True)
+    with col2:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-title">1-Month Survival (T+20)</div>
+            <div class="metric-val">{s_day20 * 100:.1f}%</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with col3:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-title">6-Month Survival (T+120)</div>
+            <div class="metric-val">{s_day120 * 100:.1f}%</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with col4:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-title">Relative Crash Hazard</div>
+            <div class="metric-val">{relative_hazard:.2f}x</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with col5:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-title">Net Executable Pop</div>
+            <div class="metric-val">+{net_executable_gain_pct:.1f}%</div>
+        </div>
+        """, unsafe_allow_html=True)
 
-    k1, k2, k3, k4 = st.columns(4)
-    with k1:
-        st.metric("Total Companies Tracked", f"{total_tracked}")
-    with k2:
-        st.metric("Above Issue Price Today", f"{surv_today} ({surv_today/total_tracked*100:.1f}%)", delta="Holding Gain")
-    with k3:
-        st.metric("Below Issue Price Today", f"{collapsed_today} ({collapsed_today/total_tracked*100:.1f}%)", delta="-Underpricing Collapsed", delta_color="inverse")
-    with k4:
-        st.metric("Cohort Median Return Today", f"{median_gain_today:+.1f}%")
+    st.markdown("---")
 
-    st.markdown("### 🔍 Search & Lookup Any SME IPO")
-    search_query = st.text_input("Filter by Company Name or Symbol (e.g., 'Alpex', 'Drone', 'Steel', 'Tech')", "")
+    # RESEARCH TABS
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "📈 Survival Probability Trajectory S(t)",
+        "⚙️ Microstructure & Slippage Engine",
+        "👯 Historical Twin Matcher",
+        "🔬 Econometric Weights & Diagnostics",
+        "📊 Live Company Performance (Till Today)"
+    ])
 
-    filtered_df = df_raw.copy()
-    if search_query:
-        q = search_query.strip().lower()
-        filtered_df = filtered_df[
-            filtered_df['company_name'].astype(str).str.lower().str.contains(q) |
-            filtered_df['symbol'].astype(str).str.lower().str.contains(q)
+    # TAB 1: SURVIVAL SIMULATION CURVE
+    with tab1:
+        st.subheader("Dynamic Underpricing Survival Curves S(t)")
+        st.markdown("Comparing **Simulated Company (Random Survival Forest)** vs. **Simulated Company (Penalized Cox PH)** vs. **Historical Baseline Median**.")
+    
+        fig = go.Figure()
+    
+        # RSF Non-Linear Prediction
+        fig.add_trace(go.Scatter(
+            x=timeline,
+            y=rsf_probs,
+            mode='lines',
+            name='Simulated Profile (Random Survival Forest)',
+            line=dict(color='#00e5ff', width=3.5)
+        ))
+    
+        # Cox PH Prediction
+        fig.add_trace(go.Scatter(
+            x=timeline,
+            y=cox_probs,
+            mode='lines',
+            name='Simulated Profile (Penalized Cox PH)',
+            line=dict(color='#ffd600', width=2.5, dash='dash')
+        ))
+    
+        # Historical Cohort Baseline
+        fig.add_trace(go.Scatter(
+            x=timeline,
+            y=km_probs,
+            mode='lines',
+            name='Empirical Baseline Cohort Median (Kaplan-Meier)',
+            line=dict(color='#78909c', width=2.0, dash='dot')
+        ))
+    
+        # Add 50% Threshold line
+        fig.add_hline(y=0.5, line_dash="dash", line_color="#ef5350", annotation_text="50% Median Survival Threshold", annotation_position="bottom right")
+    
+        fig.update_layout(
+            template="plotly_dark",
+            height=480,
+            margin=dict(l=40, r=40, t=30, b=40),
+            xaxis_title="Trading Days Since Listing (t)",
+            yaxis_title="Probability S(t) of Staying Above Issue Price",
+            yaxis=dict(range=[0.0, 1.05], gridcolor='#37474f'),
+            xaxis=dict(gridcolor='#37474f'),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        )
+    
+        st.plotly_chart(fig, use_container_width=True)
+    
+        # Risk Milestones Table
+        st.markdown("### 🎯 Horizon Survival Probabilities & Hazard Milestones")
+        m_col1, m_col2, m_col3, m_col4, m_col5 = st.columns(5)
+        
+        m_col1.metric("T+5 Days (1 Week)", f"{s_day5*100:.1f}%", delta=f"{(s_day5 - get_surv_at(5, timeline, km_probs))*100:+.1f}% vs Cohort")
+        m_col2.metric("T+20 Days (1 Month)", f"{s_day20*100:.1f}%", delta=f"{(s_day20 - get_surv_at(20, timeline, km_probs))*100:+.1f}% vs Cohort")
+        m_col3.metric("T+60 Days (1 Quarter)", f"{s_day60*100:.1f}%", delta=f"{(s_day60 - get_surv_at(60, timeline, km_probs))*100:+.1f}% vs Cohort")
+        m_col4.metric("T+120 Days (6 Months)", f"{s_day120*100:.1f}%", delta=f"{(s_day120 - get_surv_at(120, timeline, km_probs))*100:+.1f}% vs Cohort")
+        m_col5.metric("T+240 Days (1 Year)", f"{s_day240*100:.1f}%", delta=f"{(s_day240 - get_surv_at(240, timeline, km_probs))*100:+.1f}% vs Cohort")
+    
+    # TAB 2: MICROSTRUCTURE & EXECUTABLE GAIN
+    with tab2:
+        st.subheader("SEBI Mandated Lot Size & Net Execution Slippage")
+        st.markdown("""
+        In the Indian SME ecosystem, SEBI ICDR regulations mandate minimum application ticket sizes (mean INR 126,000). 
+        Secondary market liquidity dry-ups create execution friction that cuts into theoretical paper returns.
+        """)
+    
+        e_col1, e_col2, e_col3 = st.columns(3)
+        with e_col1:
+            st.markdown(f"**Total Capital Required per Lot:** `INR {lot_cost:,.2f}`")
+            st.markdown(f"**Gross Paper Value on Day 1:** `INR {day1_close * lot_size:,.2f}`")
+            st.markdown(f"**Gross Listing Profit:** `INR {gross_gain_inr:,.2f}` (`+{listing_gain_pct:.1f}%`)")
+        with e_col2:
+            st.markdown(f"**Estimated Execution Slippage:** `-{slippage_pct:.2f}%`")
+            st.markdown(f"**Slippage Haircut Cost:** `-INR {gross_gain_inr - net_gain_inr:,.2f}`")
+            st.markdown(f"**Net Executable Profit:** `INR {net_gain_inr:,.2f}` (`+{net_executable_gain_pct:.1f}%`)")
+    
+        with e_col3:
+            if s_day20 < 0.30:
+                st.markdown('<span class="badge-danger">IMMEDIATE LIQUIDATION PROTOCOL (T+1 to T+5)</span>', unsafe_allow_html=True)
+                st.info("Severe collapse hazard. Stock profile indicates immediate post-listing breakdown. Do not hold beyond first 5 days.")
+            elif s_day20 < 0.70:
+                st.markdown('<span class="badge-warn">PARTIAL PROFIT HARVESTING (T+20)</span>', unsafe_allow_html=True)
+                st.warning("Moderate persistence. Harvest 50% profit by Day 20, trail remainder on 10-day moving average.")
+            else:
+                st.markdown('<span class="badge-pass">MOMENTUM EXTENSION PROTOCOL (T+120)</span>', unsafe_allow_html=True)
+                st.success("High persistence profile. Retail breadth and day-1 volume provide deep secondary price support. Hold through T+120.")
+    
+    # TAB 3: HISTORICAL TWIN MATCHER
+    with tab3:
+        st.subheader("👯 Historical Twin Matcher (Finding Closest Real SME IPOs)")
+        st.markdown("Surfaces the top 3 actual historical companies from our 436 SME IPO cohort that share the most similar demand and microstructure characteristics.")
+    
+        # Compute Euclidean distance on normalized key features
+        norm_gain = (df_raw['listing_gain_pct'] - listing_gain_pct) / 40.0
+        norm_vol = (df_raw['traded_qty_l1'] - traded_qty_l1) / 500000.0
+        norm_ret = (df_raw['retail_subs_times'] - retail_subs_times) / 50.0
+        norm_tot = (df_raw['total_subs_times'] - total_subs_times) / 70.0
+        
+        dist = np.sqrt(norm_gain**2 + norm_vol**2 + norm_ret**2 + norm_tot**2)
+        top_twin_indices = dist.nsmallest(3).index
+    
+        twins = df_raw.loc[top_twin_indices].copy()
+        
+        for _, twin in twins.iterrows():
+            curr_price_str = f"INR {twin['current_price_today']:.2f}" if pd.notna(twin.get('current_price_today')) else "N/A"
+            curr_gain_str = f"{twin['current_gain_pct_today']:+.1f}%" if pd.notna(twin.get('current_gain_pct_today')) else "N/A"
+            is_surv_now = twin.get('is_surviving_today', 0) == 1
+            live_badge = '<span class="badge-pass">ABOVE ISSUE PRICE TODAY</span>' if is_surv_now else '<span class="badge-danger">BELOW ISSUE PRICE TODAY</span>'
+            hist_badge = '<span class="badge-danger">BREACHED</span>' if twin['event'] == 1 else '<span class="badge-pass">SURVIVED</span>'
+    
+            st.markdown(f"""
+            <div style="background:#263238; border-radius:6px; padding:12px; margin-bottom:12px; border-left:4px solid #00e5ff;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <h4 style="margin:0; color:#ffffff;">{twin['company_name']} ({twin['symbol']}) &nbsp; {live_badge}</h4>
+                    <span style="color:#aaa;">Listed: {twin['listing_date']}</span>
+                </div>
+                <div style="display:flex; gap:25px; margin-top:8px; font-size:14px; color:#cfd8dc;">
+                    <div>Issue Price: <b>INR {twin['issue_price']}</b></div>
+                    <div>Listing Pop: <b>+{twin['listing_gain_pct']:.1f}%</b></div>
+                    <div>Retail Subs: <b>{twin['retail_subs_times']:.1f}x</b></div>
+                    <div>Current Price Today: <b>{curr_price_str}</b></div>
+                    <div>Current Return Today: <b>{curr_gain_str}</b></div>
+                    <div>Historical Survival: <b>{twin['time']} trading days</b> ({hist_badge})</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+    
+    # TAB 4: ECONOMETRIC WEIGHTS
+    with tab4:
+        st.subheader("🔬 Model Weights & Concordance Indices")
+        c_col1, c_col2 = st.columns(2)
+        
+        with c_col1:
+            st.markdown("**Penalized Cox Proportional Hazards Model (Full Cohort N=436)**")
+            st.caption("Concordance Index: **0.7564** | Regularization: Elastic-Net (L1=0.5, L2=0.5)")
+            cph_summary = cph.summary[['coef', 'exp(coef)', 'se(coef)', 'p']].rename(columns={'exp(coef)': 'hazard_ratio'})
+            st.dataframe(cph_summary.style.format({
+                'coef': '{:.4f}',
+                'hazard_ratio': '{:.4f}',
+                'se(coef)': '{:.4f}',
+                'p': '{:.4e}'
+            }), use_container_width=True)
+            
+        with c_col2:
+            st.markdown("**Random Survival Forest (5-Fold Cross-Validation)**")
+            st.caption("Mean CV C-Index: **0.8140** | Trees: 80 | Min Samples Leaf: 5")
+            rsf_df = pd.DataFrame({
+                "Validation Fold": ["Fold 1", "Fold 2", "Fold 3", "Fold 4", "Fold 5", "Mean CV"],
+                "C-Index": [0.7844, 0.8711, 0.7788, 0.8062, 0.8295, 0.8140]
+            })
+            st.dataframe(rsf_df, use_container_width=True)
+    
+        st.markdown("---")
+        st.subheader("🎯 Out-of-Time Forward Test: Post-December 2024 SME IPOs")
+        st.markdown("""
+        **Model Generalization Test:** Evaluating models trained *strictly* on pre-2025 data (2013–2024) 
+        against independent SME IPOs listed **after December 31, 2024**.
+        """)
+    
+        oot_c1, oot_c2, oot_c3, oot_c4 = st.columns(4)
+        with oot_c1:
+            st.metric("Out-of-Time C-Index", "0.8944", delta="+0.0804 vs In-Sample")
+        with oot_c2:
+            st.metric("Out-of-Time ROC-AUC", "0.8813", delta="Excellent Discrimination")
+        with oot_c3:
+            st.metric("High-Risk Collapse Accuracy", "87.5%", delta="7/8 Low-Pop Collapsed")
+        with oot_c4:
+            st.metric("Low-Risk Survival Accuracy", "100.0%", delta="10/10 High-Pop Survived")
+    
+        test18_path = PROJECT_ROOT / "data" / "processed" / "sme_test_data_2025.csv"
+        if test18_path.exists():
+            df_test18 = pd.read_csv(test18_path)
+            # Predict risk with rsf
+            test_features = df_test18.copy()
+            test_features['firm_age'] = 12.0
+            test_features['diff_issue_list_dates'] = 6.0
+            test_features['log_traded_qty'] = 12.5
+            test_features['total_subs_times'] = 25.0
+            test_features['log_retail_subs'] = 3.5
+            test_features['log_day1_subs'] = 1.5
+            test_features['log_subs_accel'] = 1.2
+            test_features['log_closing_surge'] = 1.5
+            test_features['eps'] = 5.0
+            test_features['pe_ratio_clipped'] = 22.0
+            test_features['debt_to_asset_ratio'] = 0.35
+            test_features['is_hot_period'] = 1
+            
+            df_test18['Predicted Risk Score'] = rsf.predict(test_features[RSF_FEATURES])
+            df_test18['Model Risk Tier'] = pd.qcut(df_test18['Predicted Risk Score'], 3, labels=['Low Risk', 'Medium Risk', 'High Risk'])
+    
+            
+            df_display_oot = df_test18[['company_name', 'listing_date', 'listing_gain_pct', 'current_gain_loss_pct', 'event', 'Model Risk Tier', 'Predicted Risk Score']].sort_values('Predicted Risk Score').rename(columns={
+                'company_name': 'Company Name',
+                'listing_date': 'Listing Date',
+                'listing_gain_pct': 'Listing Pop (%)',
+                'current_gain_loss_pct': 'Return Today (%)',
+                'event': 'Collapsed? (1=Yes, 0=No)'
+            })
+            
+            st.dataframe(
+                df_display_oot.style.format({
+                    'Listing Pop (%)': '+{:.1f}%',
+                    'Return Today (%)': '{:+.1f}%',
+                    'Predicted Risk Score': '{:.2f}',
+                    'Collapsed? (1=Yes, 0=No)': lambda x: 'YES (COLLAPSED)' if x == 1 else 'NO (SURVIVING)'
+                }),
+                use_container_width=True
+            )
+    
+    
+    
+    # TAB 5: LIVE COHORT PERFORMANCE TILL TODAY
+    with tab5:
+        st.subheader("📊 Live SME IPO Market Performance & Status Till Today")
+        st.markdown("""
+        Tracking the **real-time current market price and total return** across our **436 SME IPO cohort** 
+        sourced directly from live exchange feeds (NSE Emerge and BSE SME).
+        """)
+    
+        # Top stats
+        total_tracked = len(df_raw)
+        surv_today = (df_raw['current_gain_pct_today'] > 0).sum()
+        collapsed_today = (df_raw['current_gain_pct_today'] <= 0).sum()
+        median_gain_today = df_raw['current_gain_pct_today'].median()
+    
+        k1, k2, k3, k4 = st.columns(4)
+        with k1:
+            st.metric("Total Companies Tracked", f"{total_tracked}")
+        with k2:
+            st.metric("Above Issue Price Today", f"{surv_today} ({surv_today/total_tracked*100:.1f}%)", delta="Holding Gain")
+        with k3:
+            st.metric("Below Issue Price Today", f"{collapsed_today} ({collapsed_today/total_tracked*100:.1f}%)", delta="-Underpricing Collapsed", delta_color="inverse")
+        with k4:
+            st.metric("Cohort Median Return Today", f"{median_gain_today:+.1f}%")
+    
+        st.markdown("### 🔍 Search & Lookup Any SME IPO")
+        search_query = st.text_input("Filter by Company Name or Symbol (e.g., 'Alpex', 'Drone', 'Steel', 'Tech')", "")
+    
+        filtered_df = df_raw.copy()
+        if search_query:
+            q = search_query.strip().lower()
+            filtered_df = filtered_df[
+                filtered_df['company_name'].astype(str).str.lower().str.contains(q) |
+                filtered_df['symbol'].astype(str).str.lower().str.contains(q)
+            ]
+    
+        cols_to_show = [
+            'company_name', 'symbol', 'listing_date', 'issue_price', 
+            'listing_close', 'listing_gain_pct', 'current_price_today', 
+            'current_gain_pct_today', 'is_surviving_today', 'time'
         ]
-
-    cols_to_show = [
-        'company_name', 'symbol', 'listing_date', 'issue_price', 
-        'listing_close', 'listing_gain_pct', 'current_price_today', 
-        'current_gain_pct_today', 'is_surviving_today', 'time'
-    ]
-    display_table = filtered_df[cols_to_show].rename(columns={
-        'company_name': 'Company Name',
-        'symbol': 'Symbol',
-        'listing_date': 'Listing Date',
-        'issue_price': 'Issue Price (INR)',
-        'listing_close': 'Day-1 Close (INR)',
-        'listing_gain_pct': 'Listing Pop (%)',
-        'current_price_today': 'Price Today (INR)',
-        'current_gain_pct_today': 'Return Today (%)',
-        'is_surviving_today': 'Above Issue Today?',
-        'time': 'Trading Days Observed'
-    })
-
-    st.dataframe(
-        display_table.style.format({
-            'Issue Price (INR)': '{:.2f}',
-            'Day-1 Close (INR)': '{:.2f}',
-            'Listing Pop (%)': '+{:.1f}%',
-            'Price Today (INR)': '{:.2f}',
-            'Return Today (%)': '{:+.1f}%',
-            'Above Issue Today?': lambda x: 'YES' if x == 1 else 'NO'
-        }),
-        height=400,
-        use_container_width=True
-    )
-
+        display_table = filtered_df[cols_to_show].rename(columns={
+            'company_name': 'Company Name',
+            'symbol': 'Symbol',
+            'listing_date': 'Listing Date',
+            'issue_price': 'Issue Price (INR)',
+            'listing_close': 'Day-1 Close (INR)',
+            'listing_gain_pct': 'Listing Pop (%)',
+            'current_price_today': 'Price Today (INR)',
+            'current_gain_pct_today': 'Return Today (%)',
+            'is_surviving_today': 'Above Issue Today?',
+            'time': 'Trading Days Observed'
+        })
+    
+        st.dataframe(
+            display_table.style.format({
+                'Issue Price (INR)': '{:.2f}',
+                'Day-1 Close (INR)': '{:.2f}',
+                'Listing Pop (%)': '+{:.1f}%',
+                'Price Today (INR)': '{:.2f}',
+                'Return Today (%)': '{:+.1f}%',
+                'Above Issue Today?': lambda x: 'YES' if x == 1 else 'NO'
+            }),
+            height=400,
+            use_container_width=True
+        )
+    
 st.markdown("---")
 st.caption("Quantitative Research Division • SME IPO Survival Analysis Lab • Synchronized with git master branch")
 
