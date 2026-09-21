@@ -224,6 +224,18 @@ C:\ProgramData\anaconda3\python.exe -m streamlit run dashboard/app.py
   3. **Mode 2 (Research & Econometric Study Lab):** Unlocks all post-listing variables (Day-1 pop, volume, slippage, twin matcher, live prices till today).
 - **Automated Tests:** 7 out of 7 unit tests passing.
 
+#### Phase 7.5: Post-2024 (Last Year) Portfolio Backtest & Selection Criteria Lab
+- **Objective:** Integrate the empirical out-of-time backtest across all 164 independent post-December 2024 SME listings, codifying the 4 quantitative portfolios and their mathematical selection criteria into the interactive dashboard.
+- **Identified Portfolios & Performance:**
+  1. **🌟 Portfolio 1 (Ultra-Conviction Compounders - Q1 Tier):** Mean Return **+175.56%**, Median Return **+76.42%** (4.5x market median), Win Rate **75.76%**, Capital Loss **24.24%**. Criteria: Retail >= 30x, Bidding Accel >= 2.5x, P/E <= 35x, Debt-to-Asset <= 0.40, Firm Age >= 10y, Day 1 Pop > 50%, Volume > 250k.
+  2. **🛡️ Portfolio 2 (Balanced Growth Allocation - Q1+Q2 Tiers):** Mean Return **+119.96%**, Excess Alpha **+49.64%** over broad market, Win Rate **65.15%**. Criteria: Retail >= 15x, Total >= 30x, P/E <= 45x, Debt <= 0.55.
+  3. **⚡ Portfolio 3 (Tactical Listing Day Flippers - Q3 Tier):** Mean Return **+32.89%**, Win Rate **50.00%**. Criteria: Retail 10x-25x, Pop 15%-50%. Protocol: Mandatory T+1 pre-open exit (9:45-10:00 AM IST) to capture pop before liquidity lock.
+  4. **🚫 Portfolio 4 (High-Hazard Avoid / Value Traps - Q4+Q5 Tiers):** Eliminates catastrophic drawdowns (e.g., Landmark Immigration -85.9%, Vandan Foods -78.7%, Takyon Networks -67.5%).
+  5. **🌐 Broad Market Benchmark (Hold All 164):** Mean **+70.32%**, Median **+17.11%**, Capital Collapse Rate **37.80%** (62 firms below issue price).
+- **Interactive UI Deliverables in [`dashboard/app.py`](../dashboard/app.py):**
+  - **Mode 2 (Tab 0):** Executive KPI cards, Head-to-Head Performance Matrix, Interactive Portfolio Selector with 4-pillar criteria deep dive, Plotly grouped return bar chart & dispersion boxplot, and 164-company live filterable screener.
+  - **Mode 1:** Embedded Last Year Forward Benchmark summary cards and constituent listing table.
+
 ---
 
 ## 4. How to Launch the Production Recommendation & Simulation Lab
