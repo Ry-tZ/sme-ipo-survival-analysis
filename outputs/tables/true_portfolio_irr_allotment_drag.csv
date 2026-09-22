@@ -1,0 +1,7 @@
+Metric,Strategy A (Naive All-Issues),Strategy B (Hardened Filtered)
+Strategy Description,Bids blindly on all 164 issues (Suffers Inverted Winner's Curse),Selective Bidding: Retail >= 20x + Liquid Treasury Yield
+Mean Annualized Portfolio Cash IRR (%),63.46%,14.50%
+5th Percentile Worst-Case IRR (%),28.34%,2.61%
+95th Percentile Best-Case IRR (%),99.10%,30.54%
+Mean Net Cash Profit (INR),"INR 951,915","INR 217,518"
+Downside Risk (Probability of IRR < 0%),0.0%,1.1%

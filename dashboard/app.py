@@ -159,7 +159,8 @@ app_mode = st.sidebar.radio(
     [
         "🔮 1. Upcoming SME IPO Bidding Engine",
         "🏆 2. Last Year Portfolios & Backtest Lab",
-        "🔬 3. Research & Econometric Study Lab"
+        "🔬 3. Research & Econometric Study Lab",
+        "🎰 4. Realized Cash & Allotment Simulator"
     ],
     index=0
 )
@@ -167,6 +168,7 @@ st.sidebar.markdown("---")
 
 is_pre_listing_mode = (app_mode == "🔮 1. Upcoming SME IPO Bidding Engine")
 is_portfolio_lab_mode = (app_mode == "🏆 2. Last Year Portfolios & Backtest Lab")
+is_allotment_sim_mode = (app_mode == "🎰 4. Realized Cash & Allotment Simulator")
 
 if is_pre_listing_mode:
     st.sidebar.markdown("### 📋 Bidding Status")
@@ -1387,6 +1389,10 @@ elif is_portfolio_lab_mode:
         render_last_year_portfolios_analysis(df_oot, key_prefix="standalone_ws")
     else:
         st.error("Post-2024 evaluation data not found at " + str(oot_path))
+
+elif is_allotment_sim_mode:
+    from src.models.allotment_cash_dashboard_module import render_realized_cash_allotment_engine
+    render_realized_cash_allotment_engine()
 
 else:
     st.title("🔬 Post-Listing Research & Econometric Study Lab")

@@ -1,0 +1,5 @@
+Macro Regime,Cohort Size,Events Observed (E=1),Right-Censored (%),Median Survival (Trading Days),Day 1 Survival Prob S(1),Day 20 Survival Prob S(20),Day 120 Survival Prob S(120)
+1. Cold Era (2013-2020),229,223,2.6%,1.0 days,41.9%,29.3%,19.7%
+2. Post-COVID (2021-2022),65,45,30.8%,25.0 days,64.6%,50.8%,40.0%
+3. Retail Mania (2023-2024),282,134,52.5%,215.0 days,78.4%,62.7%,54.9%
+Synthetic Bear Shock (2.5x Hazard),224,182,18.8%,38.5 days,72.0%,55.4%,28.1%

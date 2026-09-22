@@ -1,0 +1,6 @@
+Quintile,Count,Mean Gross Return (%),Base Spread / Impact (%),Lower Circuit Lock Penalty (%),Statutory Drag (STT/GST) (%),Total Realized Slippage (%),Net Executable Return (%),Recommended Execution Protocol
+Q1 (<=10%),307,-14.14,2.24,10.55,0.25,12.79,-26.93,Mandatory Pre-Open Auction (9:45 AM)
+Q2 (10-25%),68,18.03,1.95,3.7,0.25,5.65,12.38,Mandatory Pre-Open Auction (9:45 AM)
+Q3 (25-50%),58,37.82,2.65,0.75,0.25,2.65,35.18,Continuous Trailing Stop
+Q4 (50-90%),49,68.49,1.6,0.0,0.25,1.6,66.9,Continuous Trailing Stop
+Q5 (>90%),94,190.15,1.89,0.0,0.25,1.89,188.27,Continuous Trailing Stop
